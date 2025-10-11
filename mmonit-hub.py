@@ -613,7 +613,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
                 <option value="hosts">Sort by Host Count</option>
                 <option value="cpu">Sort by CPU Usage</option>
                 <option value="memory">Sort by Memory Usage</option>
-            </select>
+                <option value="disk">Sort by Disk Usage</option> </select>
             <button class="theme-toggle" id="themeToggle">
                 <span id="themeIcon">🌙</span>
             </button>
@@ -826,6 +826,22 @@ HTML_CONTENT = '''<!DOCTYPE html>
                         const bAvg = (b.hosts || []).reduce((sum, h) => sum + (h.mem || 0), 0) / ((b.hosts || []).length || 1);
                         return bAvg - aAvg;
                     });
+                case 'disk': // NEW DISK SORTING LOGIC
+                    return sorted.sort((a, b) => {
+                        const getAvgMaxDisk = (tenant) => {
+                            const diskUsages = (tenant.hosts || [])
+                                .map(h => Math.max(...(h.filesystems || []).map(fs => fs.usage_percent || 0), 0));
+                            
+                            return diskUsages.length > 0
+                                ? diskUsages.reduce((sum, usage) => sum + usage, 0) / diskUsages.length
+                                : 0;
+                        };
+
+                        const aAvgMaxDisk = a.error ? -1 : getAvgMaxDisk(a);
+                        const bAvgMaxDisk = b.error ? -1 : getAvgMaxDisk(b);
+                        
+                        return bAvgMaxDisk - aAvgMaxDisk;
+                    });
                 default:
                     return sorted;
             }
@@ -877,6 +893,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
                             
                             let diskInfo = '';
                             if (host.filesystems && host.filesystems.length > 0) {
+                                // Find the maximum disk usage % for the host card preview
                                 const maxDisk = host.filesystems.reduce((max, fs) => 
                                     fs.usage_percent > max ? fs.usage_percent : max, 0);
                                 diskInfo = ` | Disk: ${maxDisk.toFixed(1)}%`;
