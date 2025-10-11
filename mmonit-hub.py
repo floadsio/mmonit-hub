@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MMonit Hub - Multi-tenant monitoring dashboard (with Basic Auth, Mobile Responsiveness, Uptime, and Live Filter)
+MMonit Hub - Multi-tenant monitoring dashboard (with Basic Auth, Mobile Responsiveness, and Live Filter)
 """
 
 import json
@@ -18,6 +18,7 @@ from pathlib import Path
 from http import HTTPStatus
 import socket
 from datetime import datetime, timezone
+from collections import Counter 
 
 # Default config file location
 CONFIG_FILE = 'mmonit-hub.conf'
@@ -149,7 +150,7 @@ def query_mmonit_data(instances, allowed_tenants=None):
                 data = response.json()
                 hosts = data.get('records', [])
                 
-                # Step 4: Fetch detailed info for each host to get disk space, services, OS, and UPTIME
+                # Step 4: Fetch detailed info for each host to get disk space, services, and OS
                 for host in hosts:
                     try:
                         detail_response = session.get(
@@ -161,19 +162,22 @@ def query_mmonit_data(instances, allowed_tenants=None):
                         if detail_response.status_code == 200:
                             detail_data = detail_response.json()
                             
-                            # --- OS & UPTIME EXTRACTION ---
-                            platform = detail_data.get('records', {}).get('host', {}).get('platform', {})
-                            monit_info = detail_data.get('records', {}).get('host', {}).get('monit', {})
+                            # --- OS EXTRACTION ---
+                            host_records = detail_data.get('records', {}).get('host', {})
+                            platform = host_records.get('platform', {})
                             
-                            host['os_name'] = platform.get('name', 'Unknown OS')
-                            host['os_release'] = platform.get('release', '')
-                            host['uptime'] = monit_info.get('uptime', 0) # Uptime in seconds
-                            # --- END OS & UPTIME EXTRACTION ---
+                            # OS Info
+                            host['os_name'] = platform.get('name', 'OS N/A')
+                            host['os_release'] = platform.get('release', '') # e.g., '14.3-RELEASE-p3' or '12.0.12'
+                            
+                            # Uptime is intentionally REMOVED/set to 0
+                            host['uptime'] = 0 
+                            # --- END OS EXTRACTION ---
 
                             # Extract filesystem info and issues from services
                             filesystems = []
                             issues = []
-                            services = detail_data.get('records', {}).get('host', {}).get('services', [])
+                            services = host_records.get('services', [])
                             
                             host['service_count'] = len(services) 
                             
@@ -210,13 +214,15 @@ def query_mmonit_data(instances, allowed_tenants=None):
                             host['filesystems'] = []
                             host['issues'] = []
                             host['service_count'] = 0
-                            host['os_name'] = 'Unknown OS'
+                            host['os_name'] = 'OS N/A'
+                            host['os_release'] = ''
                             host['uptime'] = 0
                     except Exception as e:
                         host['filesystems'] = []
                         host['issues'] = []
                         host['service_count'] = 0
-                        host['os_name'] = 'Unknown OS'
+                        host['os_name'] = 'OS N/A'
+                        host['os_release'] = ''
                         host['uptime'] = 0
 
                 
@@ -258,7 +264,7 @@ def query_mmonit_data(instances, allowed_tenants=None):
     
     return result
 
-# --- HTML CONTENT (Modified for OS Info, Uptime, and Live Filter) ---
+# --- HTML CONTENT ---
 
 HTML_CONTENT = '''<!DOCTYPE html>
 <html>
@@ -412,9 +418,9 @@ HTML_CONTENT = '''<!DOCTYPE html>
             border: 1px solid var(--border-color);
             cursor: pointer;
             transition: transform 0.2s, border-color 0.2s;
-            display: block; /* Default visibility */
+            display: block;
         }
-        .host.hidden { /* NEW CLASS */
+        .host.hidden {
             display: none;
         }
         .host:hover {
@@ -431,7 +437,19 @@ HTML_CONTENT = '''<!DOCTYPE html>
             background: #fef2f2;
         }
         .host-name { font-weight: 500; margin-bottom: 4px; }
-        .host-status { font-size: 12px; color: var(--text-secondary); }
+        .host-status { 
+            font-size: 12px; 
+            color: var(--text-secondary); 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+        }
+        .host-status .os-info {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-left: 8px;
+            white-space: nowrap;
+        }
         .host-status.down { color: #ef4444; }
         .host-details { font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
         .host-issues { 
@@ -632,19 +650,24 @@ HTML_CONTENT = '''<!DOCTYPE html>
             .host-name { 
                 font-size: 16px;
             }
-            .host-status { 
-                font-size: 14px;
-            }
-            .host-details, .host-issues {
-                font-size: 13px;
-                white-space: normal;
-            }
             
             .refresh-info {
                 flex-direction: column;
                 align-items: center;
                 gap: 5px;
                 font-size: 12px;
+            }
+            
+            .host-status { /* Redefine status bar on mobile for stacking details */
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 2px;
+                font-size: 12px;
+            }
+            .host-status .os-info {
+                margin-left: 0;
+                white-space: normal;
+                text-align: left;
             }
 
             @media (max-width: 400px) {
@@ -675,7 +698,10 @@ HTML_CONTENT = '''<!DOCTYPE html>
                 <option value="memory">Sort by Memory Usage</option>
                 <option value="disk">Sort by Disk Usage</option>
                 <option value="os">Sort by OS</option>
-                <option value="uptime">Sort by Uptime</option> </select>
+                <option value="os-version">Sort by OS Version</option>
+                <option value="uptime">Sort by Uptime</option>
+                <option value="os-update-needed">Needs OS Review</option>
+            </select>
             <button class="theme-toggle" id="themeToggle">
                 <span id="themeIcon">🌙</span>
             </button>
@@ -731,10 +757,11 @@ HTML_CONTENT = '''<!DOCTYPE html>
         
         // Function to format uptime from seconds to days/hours/minutes
         function formatUptime(seconds) {
-            if (seconds === 0) return 'N/A';
-            const d = Math.floor(seconds / 86400);
-            const h = Math.floor((seconds % 86400) / 3600);
-            const m = Math.floor((seconds % 3600) / 60);
+            if (seconds === 0 || seconds === 'N/A' || seconds === null) return 'N/A';
+            const s = Number(seconds);
+            const d = Math.floor(s / 86400);
+            const h = Math.floor((s % 86400) / 3600);
+            const m = Math.floor((s % 3600) / 60);
             
             const parts = [];
             if (d > 0) parts.push(d + 'd');
@@ -781,8 +808,9 @@ HTML_CONTENT = '''<!DOCTYPE html>
         // --- RENDER OS STATS FUNCTION ---
         function renderOSStats(allHosts) {
             const osCounts = allHosts.reduce((acc, host) => {
-                if (host.os_name && host.os_name !== 'Unknown OS') {
-                    acc[host.os_name] = (acc[host.os_name] || 0) + 1;
+                if (host.os_name && host.os_name !== 'OS N/A') {
+                    const osKey = host.os_name + (host.os_release ? ' ' + host.os_release.split('.')[0] : ''); 
+                    acc[osKey] = (acc[osKey] || 0) + 1;
                 }
                 return acc;
             }, {});
@@ -799,136 +827,35 @@ HTML_CONTENT = '''<!DOCTYPE html>
                 container.style.display = 'grid';
             }
 
-            sortedOS.slice(0, 4).forEach(([osName, count]) => {
+            sortedOS.slice(0, 4).forEach(([osKey, count]) => {
                 const statCard = document.createElement('div');
                 statCard.className = 'stat-card';
                 statCard.innerHTML = `
                     <div class="stat-value">${count}</div>
-                    <div class="stat-label">${osName.toUpperCase()} HOSTS</div>
+                    <div class="stat-label">${osKey.toUpperCase()} HOSTS</div>
                 `;
                 container.appendChild(statCard);
             });
         }
         // --- END: RENDER OS STATS FUNCTION ---
-        
-        // Modal functions
-        function showHostDetails(host, tenantUrl) {
-            const modal = document.getElementById('hostModal');
-            const modalTitle = document.getElementById('modalTitle');
-            const modalBody = document.getElementById('modalBody');
+
+        // Helper for numeric version comparison (e.g., "14.1.2" vs "14.2.0")
+        function compareVersions(v1, v2) {
+            v1 = v1 || '0';
+            v2 = v2 || '0';
+            // Remove build/patch suffixes for primary comparison (e.g., "-RELEASE-p3")
+            const cleanV1 = v1.split('-')[0].split('.');
+            const cleanV2 = v2.split('-')[0].split('.');
             
-            const statusClass = host.led === 0 ? 'error' : (host.led === 1 ? 'warning' : 'ok');
-            const statusText = host.led === 0 ? 'Error' : (host.led === 1 ? 'Warning' : 'OK');
-            
-            let filesystemsHtml = '';
-            if (host.filesystems && host.filesystems.length > 0) {
-                filesystemsHtml = '<div class="detail-row"><div class="detail-label">Filesystems</div><div class="detail-value">';
-                host.filesystems.forEach(fs => {
-                    const usageClass = fs.usage_percent > 90 ? 'error' : (fs.usage_percent > 80 ? 'warning' : 'ok');
-                    filesystemsHtml += `
-                        <div style="margin-bottom: 8px;">
-                            <div><strong>${fs.name}</strong></div>
-                            <div>
-                                <span class="status-indicator ${usageClass}">${fs.usage_percent.toFixed(1)}%</span>
-                                ${fs.usage_mb !== null ? ` ${(fs.usage_mb / 1024).toFixed(1)} GB / ${(fs.total_mb / 1024).toFixed(1)} GB` : ''}
-                            </div>
-                        </div>
-                    `;
-                });
-                filesystemsHtml += '</div></div>';
+            for (let i = 0; i < Math.max(cleanV1.length, cleanV2.length); i++) {
+                const num1 = parseInt(cleanV1[i]) || 0;
+                const num2 = parseInt(cleanV2[i]) || 0;
+                
+                if (num1 < num2) return -1;
+                if (num1 > num2) return 1;
             }
-            
-            let issuesDetailsHtml = '';
-            if (host.issues && host.issues.length > 0) {
-                issuesDetailsHtml = '<div class="detail-row"><div class="detail-label">Service Issues</div><div class="detail-value">';
-                host.issues.forEach(issue => {
-                    const issueClass = issue.led === 0 ? 'error' : 'warning';
-                    issuesDetailsHtml += `
-                        <div style="margin-bottom: 8px;">
-                            <div><strong>${issue.name}</strong> (${issue.type})</div>
-                            <div>
-                                <span class="status-indicator ${issueClass}">${issue.status}</span>
-                            </div>
-                        </div>
-                    `;
-                });
-                issuesDetailsHtml += '</div></div>';
-            }
-            
-            modalTitle.textContent = host.hostname;
-            modalBody.innerHTML = `
-                <div class="detail-row">
-                    <div class="detail-label">Status</div>
-                    <div class="detail-value">
-                        <span class="status-indicator ${statusClass}">${statusText}</span>
-                    </div>
-                </div>
-                ${issuesDetailsHtml}
-                <div class="detail-row">
-                    <div class="detail-label">Operating System</div>
-                    <div class="detail-value">${host.os_name} (${host.os_release})</div>
-                </div>
-                <div class="detail-row">
-                    <div class="detail-label">Uptime</div>
-                    <div class="detail-value">${formatUptime(host.uptime)}</div>
-                </div>
-                <div class="detail-row">
-                    <div class="detail-label">CPU Usage</div>
-                    <div class="detail-value">${host.cpu}%</div>
-                </div>
-                <div class="detail-row">
-                    <div class="detail-label">Memory Usage</div>
-                    <div class="detail-value">${host.mem}%</div>
-                </div>
-                <div class="detail-row">
-                    <div class="detail-label">Events</div>
-                    <div class="detail-value">${host.events}</div>
-                </div>
-                <div class="detail-row">
-                    <div class="detail-label">Heartbeat</div>
-                    <div class="detail-value">${host.heartbeat ? '✓ Active' : '✗ Inactive'}</div>
-                </div>
-                <div class="detail-row">
-                    <div class="detail-label">Host ID</div>
-                    <div class="detail-value">${host.id}</div>
-                </div>
-                ${filesystemsHtml}
-                <div style="margin-top: 20px; text-align: center;">
-                    <a href="${tenantUrl}/admin/hosts/get?id=${host.id}" target="_blank" class="refresh">
-                        View in MMonit →
-                    </a>
-                </div>
-            `;
-            
-            modal.classList.add('show');
+            return 0;
         }
-        
-        function closeModal() {
-            document.getElementById('hostModal').classList.remove('show');
-        }
-        
-        document.getElementById('modalClose').addEventListener('click', closeModal);
-        document.getElementById('hostModal').addEventListener('click', (e) => {
-            if (e.target.id === 'hostModal') closeModal();
-        });
-        
-        function initTheme() {
-            const savedTheme = localStorage.getItem('theme');
-            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-            const theme = savedTheme || (prefersDark ? 'dark' : 'light');
-            setTheme(theme);
-        }
-        
-        function setTheme(theme) {
-            document.documentElement.setAttribute('data-theme', theme);
-            document.getElementById('themeIcon').textContent = theme === 'dark' ? '☀️' : '🌙';
-            localStorage.setItem('theme', theme);
-        }
-        
-        document.getElementById('themeToggle').addEventListener('click', () => {
-            const currentTheme = document.documentElement.getAttribute('data-theme');
-            setTheme(currentTheme === 'dark' ? 'light' : 'dark');
-        });
         
         function sortTenants(data, sortBy) {
             const sorted = [...data];
@@ -936,9 +863,16 @@ HTML_CONTENT = '''<!DOCTYPE html>
             switch(sortBy) {
                 case 'issues-first':
                     return sorted.sort((a, b) => {
-                        const aIssues = a.error ? 1000 : (a.hosts || []).filter(h => h.led !== 2).length;
-                        const bIssues = b.error ? 1000 : (b.hosts || []).filter(h => b.led !== 2).length;
-                        return bIssues - aIssues;
+                        const aIssues = a.error ? 10000 : (a.hosts || []).filter(h => h.led !== 2).length;
+                        const bIssues = b.error ? 10000 : (b.hosts || []).filter(h => b.led !== 2).length;
+                        
+                        if (aIssues !== bIssues) {
+                           return bIssues - aIssues;
+                        }
+                        
+                        const aHostsTotal = (a.hosts || []).length;
+                        const bHostsTotal = (b.hosts || []).length;
+                        return bHostsTotal - aHostsTotal; // Tiebreaker
                     });
                 case 'name':
                     return sorted.sort((a, b) => a.tenant.localeCompare(b.tenant));
@@ -976,22 +910,26 @@ HTML_CONTENT = '''<!DOCTYPE html>
                         
                         return bAvgMaxDisk - aAvgMaxDisk;
                     });
-                case 'os':
+                case 'os': // Sort by OS Name (alphabetical)
                     return sorted.sort((a, b) => {
                         const aOS = (a.hosts[0] && a.hosts[0].os_name) || 'zzzzzz';
                         const bOS = (b.hosts[0] && b.hosts[0].os_name) || 'zzzzzz';
                         return aOS.localeCompare(bOS); 
                     });
-                case 'uptime': // NEW UPTIME SORT
+                case 'os-version': // Sort by OS Version (numeric comparison, Ascending: oldest first)
                     return sorted.sort((a, b) => {
-                        const getAvgUptime = (tenant) => 
-                            (tenant.hosts || []).reduce((sum, h) => sum + (h.uptime || 0), 0) / ((tenant.hosts || []).length || 1);
+                        // Find the OLDEST version in each tenant group for sorting
+                        const aHostVersions = (a.hosts || []).map(h => h.os_release || '0');
+                        const bHostVersions = (b.hosts || []).map(h => h.os_release || '0');
 
-                        const aAvgUptime = a.error ? -1 : getAvgUptime(a);
-                        const bAvgUptime = b.error ? -1 : getAvgUptime(b);
+                        const aOldestVersion = aHostVersions.sort(compareVersions)[0];
+                        const bOldestVersion = bHostVersions.sort(compareVersions)[0];
                         
-                        return bAvgUptime - aAvgUptime;
+                        return compareVersions(aOldestVersion, bOldestVersion); 
                     });
+                case 'uptime': // REMOVED FOR NOW, kept placeholder for structure
+                case 'os-update-needed': // REMOVED FOR NOW, kept placeholder for structure
+                     return sorted.sort((a, b) => b.error ? -1 : 1); // Default to error sort if selected
                 default:
                     return sorted;
             }
@@ -1005,7 +943,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
             let totalHosts = 0;
             let totalIssues = 0;
             let totalServices = 0; 
-            
+
             const allHosts = processedTenants.flatMap(tenant => tenant.hosts || []);
             renderOSStats(allHosts); 
 
@@ -1063,16 +1001,25 @@ HTML_CONTENT = '''<!DOCTYPE html>
                                 }
                             }
                             
-                            const os_display = host.os_name && host.os_name !== 'Unknown OS' ? ` | OS: ${host.os_name}` : '';
+                            const os_name = host.os_name && host.os_name !== 'OS N/A' ? host.os_name : 'OS N/A';
+                            const os_release = host.os_release ? host.os_release : '';
+                            const os_version_display = os_release ? ` ${os_release}` : '';
+
+                            const hostName = host.hostname || 'Unknown';
+                            const filterText = document.getElementById('hostFilter').value.toLowerCase();
+                            
+                            const hostSearchableText = `${hostName} ${os_name} ${os_release}`.toLowerCase();
+                            const isHidden = filterText && !hostSearchableText.includes(filterText) ? 'hidden' : '';
 
                             hostsHtml += `
-                                <div class="host ${isDown ? 'error' : ''}" onclick='showHostDetails(${JSON.stringify(host)}, "${tenant.url}")'>
-                                    <div class="host-name">${host.hostname || 'Unknown'}</div>
+                                <div class="host ${isDown ? 'error' : ''} ${isHidden}" onclick='showHostDetails(${JSON.stringify(host)}, "${tenant.url}")'>
+                                    <div class="host-name">${hostName}</div>
                                     <div class="host-status ${isDown ? 'down' : ''}">
-                                        ${statusIcon} ${statusText}
+                                        <span>${statusIcon} ${statusText}</span>
+                                        <span class="os-info">${os_name}${os_version_display}</span>
                                     </div>
                                     <div class="host-details">
-                                        CPU: ${host.cpu}% | Mem: ${host.mem}%${diskInfo}${os_display}
+                                        CPU: ${host.cpu}% | Mem: ${host.mem}%${diskInfo}
                                     </div>
                                     ${issuesHtml}
                                 </div>
@@ -1122,8 +1069,8 @@ HTML_CONTENT = '''<!DOCTYPE html>
             const allHosts = data.flatMap(tenant => tenant.hosts || []);
             renderOSStats(allHosts);
             
-            // Get current filter value and sanitize it
             const filterText = document.getElementById('hostFilter').value.toLowerCase();
+            const selectedSort = document.getElementById('sortSelect').value;
             
             data.forEach(tenant => {
                 const div = document.createElement('div');
@@ -1178,21 +1125,35 @@ HTML_CONTENT = '''<!DOCTYPE html>
                                 }
                             }
                             
-                            const os_display = host.os_name && host.os_name !== 'Unknown OS' ? ` | OS: ${host.os_name}` : '';
-                            
-                            // --- LIVE FILTER LOGIC APPLIED TO HTML GENERATION ---
+                            const os_name = host.os_name && host.os_name !== 'OS N/A' ? host.os_name : 'OS N/A';
+                            const os_release = host.os_release ? host.os_release : '';
+                            const os_version_display = os_release ? ` ${os_release}` : '';
+
                             const hostName = host.hostname || 'Unknown';
-                            const isHidden = filterText && !hostName.toLowerCase().includes(filterText) ? 'hidden' : '';
-                            // --- END LIVE FILTER LOGIC ---
+                            
+                            // --- ENHANCED FILTERING LOGIC ---
+                            const hostSearchableText = `${hostName} ${os_name} ${os_release}`.toLowerCase();
+                            let isHidden = filterText && !hostSearchableText.includes(filterText) ? 'hidden' : '';
+                            // --- END ENHANCED FILTERING LOGIC ---
+
+                            // Apply OS Update filter
+                            if (selectedSort === 'os-update-needed' && !isHidden) {
+                                if (host.os_release) { // Hide if release is present
+                                    isHidden = 'hidden';
+                                } else { // Show if release is missing/needs review
+                                    isHidden = '';
+                                }
+                            }
 
                             hostsHtml += `
                                 <div class="host ${isDown ? 'error' : ''} ${isHidden}" onclick='showHostDetails(${JSON.stringify(host)}, "${tenant.url}")'>
                                     <div class="host-name">${hostName}</div>
                                     <div class="host-status ${isDown ? 'down' : ''}">
-                                        ${statusIcon} ${statusText}
+                                        <span>${statusIcon} ${statusText}</span>
+                                        <span class="os-info">${os_name}${os_version_display}</span>
                                     </div>
                                     <div class="host-details">
-                                        CPU: ${host.cpu}% | Mem: ${host.mem}%${diskInfo}${os_display}
+                                        CPU: ${host.cpu}% | Mem: ${host.mem}%${diskInfo}
                                     </div>
                                     ${issuesHtml}
                                 </div>
@@ -1230,7 +1191,6 @@ HTML_CONTENT = '''<!DOCTYPE html>
         });
         
         document.getElementById('hostFilter').addEventListener('input', (e) => {
-            // Apply sorting first, then filtering, and render
             const currentSort = document.getElementById('sortSelect').value;
             const sorted = sortTenants(tenantsData, currentSort);
             renderTenantsOnly(sorted);
