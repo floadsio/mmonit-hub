@@ -403,6 +403,15 @@
         
         // Initialize theme
         function initTheme() {
+            // Check URL parameter first
+            const urlParams = new URLSearchParams(window.location.search);
+            const urlTheme = urlParams.get('theme');
+            
+            if (urlTheme === 'dark' || urlTheme === 'light') {
+                setTheme(urlTheme);
+                return;
+            }
+            
             const savedTheme = localStorage.getItem('mmonit-hub-demo-theme');
             const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
             const theme = savedTheme || (prefersDark ? 'dark' : 'light');
