@@ -333,20 +333,23 @@ HTML_CONTENT = '''<!DOCTYPE html>
             white-space: nowrap;
         }
 
-        .logout-btn { 
+        /* --- Unified Logout Button Style (matches theme toggle & dropdown) --- */
+        .logout-btn {
             padding: 8px 12px;
             border-radius: 4px;
-            border: 1px solid #dc2626; 
-            background: #dc2626; 
-            color: white;
+            border: 1px solid var(--border-color);
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
             cursor: pointer;
             font-size: 14px;
             text-decoration: none;
             display: inline-block;
-            transition: background 0.2s;
+            transition: background 0.2s, color 0.2s;
         }
+
         .logout-btn:hover {
-            background: #b91c1c;
+            background: var(--border-color);
+            color: var(--text-primary);
         }
 
         .sort-dropdown {
