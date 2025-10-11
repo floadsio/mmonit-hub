@@ -150,7 +150,7 @@ def query_mmonit_data(instances, allowed_tenants=None):
                 data = response.json()
                 hosts = data.get('records', [])
                 
-                # Step 4: Fetch detailed info for each host to get disk space, services, and OS
+                # Step 4: Fetch detailed info for each host to get disk space, services, OS
                 for host in hosts:
                     try:
                         detail_response = session.get(
@@ -170,8 +170,7 @@ def query_mmonit_data(instances, allowed_tenants=None):
                             host['os_name'] = platform.get('name', 'OS N/A')
                             host['os_release'] = platform.get('release', '') # e.g., '14.3-RELEASE-p3' or '12.0.12'
                             
-                            # Uptime is intentionally REMOVED/set to 0
-                            host['uptime'] = 0 
+                            # Uptime is intentionally REMOVED
                             # --- END OS EXTRACTION ---
 
                             # Extract filesystem info and issues from services
@@ -216,14 +215,12 @@ def query_mmonit_data(instances, allowed_tenants=None):
                             host['service_count'] = 0
                             host['os_name'] = 'OS N/A'
                             host['os_release'] = ''
-                            host['uptime'] = 0
                     except Exception as e:
                         host['filesystems'] = []
                         host['issues'] = []
                         host['service_count'] = 0
                         host['os_name'] = 'OS N/A'
                         host['os_release'] = ''
-                        host['uptime'] = 0
 
                 
                 # Convert to our format with hosts array
@@ -658,7 +655,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
                 font-size: 12px;
             }
             
-            .host-status { /* Redefine status bar on mobile for stacking details */
+            .host-status { 
                 flex-direction: column;
                 align-items: flex-start;
                 gap: 2px;
@@ -699,7 +696,6 @@ HTML_CONTENT = '''<!DOCTYPE html>
                 <option value="disk">Sort by Disk Usage</option>
                 <option value="os">Sort by OS</option>
                 <option value="os-version">Sort by OS Version</option>
-                <option value="uptime">Sort by Uptime</option>
                 <option value="os-update-needed">Needs OS Review</option>
             </select>
             <button class="theme-toggle" id="themeToggle">
@@ -755,22 +751,29 @@ HTML_CONTENT = '''<!DOCTYPE html>
         
         // --- UTILITY FUNCTIONS ---
         
-        // Function to format uptime from seconds to days/hours/minutes
+        // Function to format uptime (REMOVED)
         function formatUptime(seconds) {
-            if (seconds === 0 || seconds === 'N/A' || seconds === null) return 'N/A';
-            const s = Number(seconds);
-            const d = Math.floor(s / 86400);
-            const h = Math.floor((s % 86400) / 3600);
-            const m = Math.floor((s % 3600) / 60);
-            
-            const parts = [];
-            if (d > 0) parts.push(d + 'd');
-            if (h > 0) parts.push(h + 'h');
-            if (m > 0 && parts.length < 2) parts.push(m + 'm');
-            
-            return parts.join(' ');
+            return 'N/A (Uptime Removed)';
         }
         
+        // Helper for numeric version comparison (e.g., "14.1.2" vs "14.2.0")
+        function compareVersions(v1, v2) {
+            v1 = v1 || '0';
+            v2 = v2 || '0';
+            // Remove build/patch suffixes for primary comparison (e.g., "-RELEASE-p3")
+            const cleanV1 = v1.split('-')[0].split('.');
+            const cleanV2 = v2.split('-')[0].split('.');
+            
+            for (let i = 0; i < Math.max(cleanV1.length, cleanV2.length); i++) {
+                const num1 = parseInt(cleanV1[i]) || 0;
+                const num2 = parseInt(cleanV2[i]) || 0;
+                
+                if (num1 < num2) return -1;
+                if (num1 > num2) return 1;
+            }
+            return 0;
+        }
+
         // FIX: Reliable Basic Auth logout trick using fetch with invalid credentials
         document.getElementById('logoutBtn').addEventListener('click', () => {
             const currentUrl = window.location.href.split('?')[0].split('#')[0];
@@ -838,24 +841,121 @@ HTML_CONTENT = '''<!DOCTYPE html>
             });
         }
         // --- END: RENDER OS STATS FUNCTION ---
-
-        // Helper for numeric version comparison (e.g., "14.1.2" vs "14.2.0")
-        function compareVersions(v1, v2) {
-            v1 = v1 || '0';
-            v2 = v2 || '0';
-            // Remove build/patch suffixes for primary comparison (e.g., "-RELEASE-p3")
-            const cleanV1 = v1.split('-')[0].split('.');
-            const cleanV2 = v2.split('-')[0].split('.');
+        
+        // Modal functions
+        function showHostDetails(host, tenantUrl) {
+            const modal = document.getElementById('hostModal');
+            const modalTitle = document.getElementById('modalTitle');
+            const modalBody = document.getElementById('modalBody');
             
-            for (let i = 0; i < Math.max(cleanV1.length, cleanV2.length); i++) {
-                const num1 = parseInt(cleanV1[i]) || 0;
-                const num2 = parseInt(cleanV2[i]) || 0;
-                
-                if (num1 < num2) return -1;
-                if (num1 > num2) return 1;
+            const statusClass = host.led === 0 ? 'error' : (host.led === 1 ? 'warning' : 'ok');
+            const statusText = host.led === 0 ? 'Error' : (host.led === 1 ? 'Warning' : 'OK');
+            
+            let filesystemsHtml = '';
+            if (host.filesystems && host.filesystems.length > 0) {
+                filesystemsHtml = '<div class="detail-row"><div class="detail-label">Filesystems</div><div class="detail-value">';
+                host.filesystems.forEach(fs => {
+                    const usageClass = fs.usage_percent > 90 ? 'error' : (fs.usage_percent > 80 ? 'warning' : 'ok');
+                    filesystemsHtml += `
+                        <div style="margin-bottom: 8px;">
+                            <div><strong>${fs.name}</strong></div>
+                            <div>
+                                <span class="status-indicator ${usageClass}">${fs.usage_percent.toFixed(1)}%</span>
+                                ${fs.usage_mb !== null ? ` ${(fs.usage_mb / 1024).toFixed(1)} GB / ${(fs.total_mb / 1024).toFixed(1)} GB` : ''}
+                            </div>
+                        </div>
+                    `;
+                });
+                filesystemsHtml += '</div></div>';
             }
-            return 0;
+            
+            let issuesDetailsHtml = '';
+            if (host.issues && host.issues.length > 0) {
+                issuesDetailsHtml = '<div class="detail-row"><div class="detail-label">Service Issues</div><div class="detail-value">';
+                host.issues.forEach(issue => {
+                    const issueClass = issue.led === 0 ? 'error' : 'warning';
+                    issuesDetailsHtml += `
+                        <div style="margin-bottom: 8px;">
+                            <div><strong>${issue.name}</strong> (${issue.type})</div>
+                            <div>
+                                <span class="status-indicator ${issueClass}">${issue.status}</span>
+                            </div>
+                        </div>
+                    `;
+                });
+                issuesDetailsHtml += '</div></div>';
+            }
+            
+            modalTitle.textContent = host.hostname;
+            modalBody.innerHTML = `
+                <div class="detail-row">
+                    <div class="detail-label">Status</div>
+                    <div class="detail-value">
+                        <span class="status-indicator ${statusClass}">${statusText}</span>
+                    </div>
+                </div>
+                ${issuesDetailsHtml}
+                <div class="detail-row">
+                    <div class="detail-label">Operating System</div>
+                    <div class="detail-value">${host.os_name} (${host.os_release || 'N/A'})</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">CPU Usage</div>
+                    <div class="detail-value">${host.cpu}%</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Memory Usage</div>
+                    <div class="detail-value">${host.mem}%</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Events</div>
+                    <div class="detail-value">${host.events}</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Heartbeat</div>
+                    <div class="detail-value">${host.heartbeat ? '✓ Active' : '✗ Inactive'}</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Host ID</div>
+                    <div class="detail-value">${host.id}</div>
+                </div>
+                ${filesystemsHtml}
+                <div style="margin-top: 20px; text-align: center;">
+                    <a href="${tenantUrl}/admin/hosts/get?id=${host.id}" target="_blank" class="refresh">
+                        View in MMonit →
+                    </a>
+                </div>
+            `;
+            
+            modal.classList.add('show');
         }
+        
+        function closeModal() {
+            document.getElementById('hostModal').classList.remove('show');
+        }
+        
+        document.getElementById('modalClose').addEventListener('click', closeModal);
+        document.getElementById('hostModal').addEventListener('click', (e) => {
+            if (e.target.id === 'hostModal') closeModal();
+        });
+        
+        function initTheme() {
+            const savedTheme = localStorage.getItem('theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const theme = savedTheme || (prefersDark ? 'dark' : 'light');
+            setTheme(theme);
+        }
+        
+        function setTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            document.getElementById('themeIcon').textContent = theme === 'dark' ? '☀️' : '🌙';
+            localStorage.setItem('theme', theme);
+        }
+        
+        document.getElementById('themeToggle').addEventListener('click', () => {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            setTheme(currentTheme === 'dark' ? 'light' : 'dark');
+        });
         
         function sortTenants(data, sortBy) {
             const sorted = [...data];
@@ -927,9 +1027,18 @@ HTML_CONTENT = '''<!DOCTYPE html>
                         
                         return compareVersions(aOldestVersion, bOldestVersion); 
                     });
-                case 'uptime': // REMOVED FOR NOW, kept placeholder for structure
-                case 'os-update-needed': // REMOVED FOR NOW, kept placeholder for structure
-                     return sorted.sort((a, b) => b.error ? -1 : 1); // Default to error sort if selected
+                case 'os-update-needed': 
+                     return sorted.sort((a, b) => {
+                        const aNeedsUpdate = (a.hosts || []).some(h => !h.os_release);
+                        const bNeedsUpdate = (b.hosts || []).some(h => !b.os_release);
+                        
+                        if (aNeedsUpdate && !bNeedsUpdate) return -1;
+                        if (!aNeedsUpdate && bNeedsUpdate) return 1;
+                        
+                        const aIssues = a.error ? 1000 : (a.hosts || []).filter(h => h.led !== 2).length;
+                        const bIssues = b.error ? 1000 : (b.hosts || []).filter(h => h.led !== 2).length;
+                        return bIssues - aIssues;
+                    });
                 default:
                     return sorted;
             }
