@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MMonit Hub - Multi-tenant monitoring dashboard (with Basic Auth and Mobile Responsiveness)
+MMonit Hub - Multi-tenant monitoring dashboard (with Basic Auth, Mobile Responsiveness, Uptime, and Live Filter)
 """
 
 import json
@@ -11,6 +11,7 @@ import secrets
 import hashlib
 import hmac
 import base64
+import re 
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 from pathlib import Path
@@ -131,7 +132,7 @@ def query_mmonit_data(instances, allowed_tenants=None):
                     'tenant': name,
                     'url': url,
                     'error': f'Login failed: HTTP {login_response.status_code}',
-                    'hosts': []
+                    'hosts': [],
                 })
                 continue
             
@@ -148,7 +149,7 @@ def query_mmonit_data(instances, allowed_tenants=None):
                 data = response.json()
                 hosts = data.get('records', [])
                 
-                # Step 4: Fetch detailed info for each host to get disk space and services
+                # Step 4: Fetch detailed info for each host to get disk space, services, OS, and UPTIME
                 for host in hosts:
                     try:
                         detail_response = session.get(
@@ -159,12 +160,21 @@ def query_mmonit_data(instances, allowed_tenants=None):
                         )
                         if detail_response.status_code == 200:
                             detail_data = detail_response.json()
+                            
+                            # --- OS & UPTIME EXTRACTION ---
+                            platform = detail_data.get('records', {}).get('host', {}).get('platform', {})
+                            monit_info = detail_data.get('records', {}).get('host', {}).get('monit', {})
+                            
+                            host['os_name'] = platform.get('name', 'Unknown OS')
+                            host['os_release'] = platform.get('release', '')
+                            host['uptime'] = monit_info.get('uptime', 0) # Uptime in seconds
+                            # --- END OS & UPTIME EXTRACTION ---
+
                             # Extract filesystem info and issues from services
                             filesystems = []
                             issues = []
                             services = detail_data.get('records', {}).get('host', {}).get('services', [])
                             
-                            # Add service count to host object
                             host['service_count'] = len(services) 
                             
                             for service in services:
@@ -197,29 +207,31 @@ def query_mmonit_data(instances, allowed_tenants=None):
                             host['filesystems'] = filesystems
                             host['issues'] = issues
                         else:
-                            # Handle detail fetch failure
                             host['filesystems'] = []
                             host['issues'] = []
                             host['service_count'] = 0
+                            host['os_name'] = 'Unknown OS'
+                            host['uptime'] = 0
                     except Exception as e:
-                        # Log error but continue with other hosts
                         host['filesystems'] = []
                         host['issues'] = []
                         host['service_count'] = 0
+                        host['os_name'] = 'Unknown OS'
+                        host['uptime'] = 0
 
                 
                 # Convert to our format with hosts array
                 result.append({
                     'tenant': name,
                     'url': url,
-                    'hosts': hosts
+                    'hosts': hosts,
                 })
             else:
                 result.append({
                     'tenant': name,
                     'url': url,
                     'error': f'API error: HTTP {response.status_code}',
-                    'hosts': []
+                    'hosts': [],
                 })
                 
         except requests.exceptions.Timeout:
@@ -227,26 +239,26 @@ def query_mmonit_data(instances, allowed_tenants=None):
                 'tenant': name,
                 'url': url,
                 'error': 'Connection timeout',
-                'hosts': []
+                'hosts': [],
             })
         except requests.exceptions.ConnectionError:
             result.append({
                 'tenant': name,
                 'url': url,
                 'error': 'Connection failed',
-                'hosts': []
+                'hosts': [],
             })
         except Exception as e:
             result.append({
                 'tenant': name,
                 'url': url,
                 'error': str(e),
-                'hosts': []
+                'hosts': [],
             })
     
     return result
 
-# --- HTML CONTENT ---
+# --- HTML CONTENT (Modified for OS Info, Uptime, and Live Filter) ---
 
 HTML_CONTENT = '''<!DOCTYPE html>
 <html>
@@ -295,6 +307,9 @@ HTML_CONTENT = '''<!DOCTYPE html>
             align-items: center;
             flex-wrap: wrap; 
         }
+        .header-content {
+            margin-right: 20px;
+        }
         .header-content h1 { font-size: 24px; margin-bottom: 8px; }
         .subtitle { color: var(--text-secondary); font-size: 14px; }
         
@@ -302,8 +317,35 @@ HTML_CONTENT = '''<!DOCTYPE html>
             display: flex;
             gap: 10px;
             align-items: center;
+            flex-wrap: wrap; 
         }
         
+        .user-info { 
+            font-size: 14px;
+            color: #3b82f6;
+            padding: 8px 12px;
+            border-radius: 4px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            white-space: nowrap;
+        }
+
+        .logout-btn { 
+            padding: 8px 12px;
+            border-radius: 4px;
+            border: 1px solid #dc2626; 
+            background: #dc2626; 
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            text-decoration: none;
+            display: inline-block;
+            transition: background 0.2s;
+        }
+        .logout-btn:hover {
+            background: #b91c1c;
+        }
+
         .sort-dropdown {
             padding: 8px 12px;
             border-radius: 4px;
@@ -370,6 +412,10 @@ HTML_CONTENT = '''<!DOCTYPE html>
             border: 1px solid var(--border-color);
             cursor: pointer;
             transition: transform 0.2s, border-color 0.2s;
+            display: block; /* Default visibility */
+        }
+        .host.hidden { /* NEW CLASS */
+            display: none;
         }
         .host:hover {
             transform: translateY(-2px);
@@ -520,21 +566,39 @@ HTML_CONTENT = '''<!DOCTYPE html>
             .controls {
                 margin-top: 15px;
                 width: 100%;
-                justify-content: space-between;
+                flex-direction: column; 
+                align-items: stretch;
             }
 
             .sort-dropdown {
-                flex-grow: 1; 
-                margin-right: 10px;
+                margin-top: 8px;
+                margin-right: 0;
                 font-size: 16px; 
             }
             
             .theme-toggle {
                  font-size: 16px; 
             }
+            
+            .user-logout-group {
+                display: flex;
+                width: 100%;
+                justify-content: space-between;
+                margin-bottom: 8px; 
+            }
+
+            .user-info {
+                flex-grow: 1;
+                margin-right: 8px;
+                text-align: center;
+            }
+            .logout-btn {
+                flex-shrink: 0;
+            }
+
 
             .stats {
-                grid-template-columns: 1fr 1fr; /* Two columns on mobile */
+                grid-template-columns: 1fr 1fr; 
                 gap: 10px;
                 margin-bottom: 15px;
             }
@@ -557,7 +621,6 @@ HTML_CONTENT = '''<!DOCTYPE html>
                 font-size: 22px;
             }
 
-            /* FORCE 1 COLUMN for optimal mobile readability */
             .hosts {
                 grid-template-columns: 1fr;
                 gap: 10px;
@@ -585,14 +648,6 @@ HTML_CONTENT = '''<!DOCTYPE html>
             }
 
             @media (max-width: 400px) {
-                .controls {
-                    flex-direction: column;
-                    align-items: stretch;
-                }
-                .sort-dropdown {
-                    margin-right: 0;
-                    margin-bottom: 8px;
-                }
                 .stats {
                     grid-template-columns: 1fr;
                 }
@@ -607,13 +662,20 @@ HTML_CONTENT = '''<!DOCTYPE html>
             <div class="subtitle">Multi-tenant monitoring dashboard</div>
         </div>
         <div class="controls">
+            <div class="user-logout-group">
+                <span class="user-info">👤 USERNAME_PLACEHOLDER</span>
+                <button class="logout-btn" id="logoutBtn">Logout / Change User</button>
+            </div>
+            <input type="text" id="hostFilter" placeholder="Filter hosts..." style="padding: 8px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary); font-size: 14px; flex-grow: 1;">
             <select class="sort-dropdown" id="sortSelect">
                 <option value="issues-first">Issues First</option>
                 <option value="name">Sort by Name</option>
                 <option value="hosts">Sort by Host Count</option>
                 <option value="cpu">Sort by CPU Usage</option>
                 <option value="memory">Sort by Memory Usage</option>
-                <option value="disk">Sort by Disk Usage</option> </select>
+                <option value="disk">Sort by Disk Usage</option>
+                <option value="os">Sort by OS</option>
+                <option value="uptime">Sort by Uptime</option> </select>
             <button class="theme-toggle" id="themeToggle">
                 <span id="themeIcon">🌙</span>
             </button>
@@ -638,7 +700,9 @@ HTML_CONTENT = '''<!DOCTYPE html>
             <div class="stat-label">Issues Detected</div>
         </div>
     </div>
-    
+
+    <div class="stats" id="os-stats-container">
+    </div>
     <div class="refresh-info">
         <span id="last-update">Last Updated: N/A</span>
         <span id="refresh-interval-display"></span>
@@ -663,6 +727,39 @@ HTML_CONTENT = '''<!DOCTYPE html>
     <script>
         let tenantsData = [];
         
+        // --- UTILITY FUNCTIONS ---
+        
+        // Function to format uptime from seconds to days/hours/minutes
+        function formatUptime(seconds) {
+            if (seconds === 0) return 'N/A';
+            const d = Math.floor(seconds / 86400);
+            const h = Math.floor((seconds % 86400) / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            
+            const parts = [];
+            if (d > 0) parts.push(d + 'd');
+            if (h > 0) parts.push(h + 'h');
+            if (m > 0 && parts.length < 2) parts.push(m + 'm');
+            
+            return parts.join(' ');
+        }
+        
+        // FIX: Reliable Basic Auth logout trick using fetch with invalid credentials
+        document.getElementById('logoutBtn').addEventListener('click', () => {
+            const currentUrl = window.location.href.split('?')[0].split('#')[0];
+            const baseUrl = currentUrl.split('//')[0] + '//' + currentUrl.split('//')[1].split('/')[0];
+
+            fetch(currentUrl, {
+                headers: {
+                    'Authorization': 'Basic ' + btoa('logout:invalid')
+                }
+            }).then(() => {
+                window.location.href = baseUrl;
+            }).catch(() => {
+                 window.location.href = baseUrl;
+            });
+        });
+        
         function displayTimeInfo(lastFetchUnix, refreshSeconds) {
             const lastUpdateElement = document.getElementById('last-update');
             const intervalElement = document.getElementById('refresh-interval-display');
@@ -680,6 +777,39 @@ HTML_CONTENT = '''<!DOCTYPE html>
                  intervalElement.textContent = 'Auto-refresh: Disabled';
             }
         }
+        
+        // --- RENDER OS STATS FUNCTION ---
+        function renderOSStats(allHosts) {
+            const osCounts = allHosts.reduce((acc, host) => {
+                if (host.os_name && host.os_name !== 'Unknown OS') {
+                    acc[host.os_name] = (acc[host.os_name] || 0) + 1;
+                }
+                return acc;
+            }, {});
+
+            const sortedOS = Object.entries(osCounts).sort(([, countA], [, countB]) => countB - countA);
+
+            const container = document.getElementById('os-stats-container');
+            container.innerHTML = '';
+            
+            if (sortedOS.length === 0) {
+                container.style.display = 'none';
+                return;
+            } else {
+                container.style.display = 'grid';
+            }
+
+            sortedOS.slice(0, 4).forEach(([osName, count]) => {
+                const statCard = document.createElement('div');
+                statCard.className = 'stat-card';
+                statCard.innerHTML = `
+                    <div class="stat-value">${count}</div>
+                    <div class="stat-label">${osName.toUpperCase()} HOSTS</div>
+                `;
+                container.appendChild(statCard);
+            });
+        }
+        // --- END: RENDER OS STATS FUNCTION ---
         
         // Modal functions
         function showHostDetails(host, tenantUrl) {
@@ -735,8 +865,12 @@ HTML_CONTENT = '''<!DOCTYPE html>
                 </div>
                 ${issuesDetailsHtml}
                 <div class="detail-row">
-                    <div class="detail-label">Message</div>
-                    <div class="detail-value">${host.status || 'N/A'}</div>
+                    <div class="detail-label">Operating System</div>
+                    <div class="detail-value">${host.os_name} (${host.os_release})</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Uptime</div>
+                    <div class="detail-value">${formatUptime(host.uptime)}</div>
                 </div>
                 <div class="detail-row">
                     <div class="detail-label">CPU Usage</div>
@@ -803,7 +937,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
                 case 'issues-first':
                     return sorted.sort((a, b) => {
                         const aIssues = a.error ? 1000 : (a.hosts || []).filter(h => h.led !== 2).length;
-                        const bIssues = b.error ? 1000 : (b.hosts || []).filter(h => h.led !== 2).length;
+                        const bIssues = b.error ? 1000 : (b.hosts || []).filter(h => b.led !== 2).length;
                         return bIssues - aIssues;
                     });
                 case 'name':
@@ -826,7 +960,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
                         const bAvg = (b.hosts || []).reduce((sum, h) => sum + (h.mem || 0), 0) / ((b.hosts || []).length || 1);
                         return bAvg - aAvg;
                     });
-                case 'disk': // NEW DISK SORTING LOGIC
+                case 'disk':
                     return sorted.sort((a, b) => {
                         const getAvgMaxDisk = (tenant) => {
                             const diskUsages = (tenant.hosts || [])
@@ -842,21 +976,40 @@ HTML_CONTENT = '''<!DOCTYPE html>
                         
                         return bAvgMaxDisk - aAvgMaxDisk;
                     });
+                case 'os':
+                    return sorted.sort((a, b) => {
+                        const aOS = (a.hosts[0] && a.hosts[0].os_name) || 'zzzzzz';
+                        const bOS = (b.hosts[0] && b.hosts[0].os_name) || 'zzzzzz';
+                        return aOS.localeCompare(bOS); 
+                    });
+                case 'uptime': // NEW UPTIME SORT
+                    return sorted.sort((a, b) => {
+                        const getAvgUptime = (tenant) => 
+                            (tenant.hosts || []).reduce((sum, h) => sum + (h.uptime || 0), 0) / ((tenant.hosts || []).length || 1);
+
+                        const aAvgUptime = a.error ? -1 : getAvgUptime(a);
+                        const bAvgUptime = b.error ? -1 : getAvgUptime(b);
+                        
+                        return bAvgUptime - aAvgUptime;
+                    });
                 default:
                     return sorted;
             }
         }
         
         function renderTenants(data) {
-            // This function is run on initial load and full refresh, updating ALL counters/times
-            
+            const processedTenants = data.tenants; 
+        
             const container = document.getElementById('tenants');
             container.innerHTML = '';
             let totalHosts = 0;
             let totalIssues = 0;
             let totalServices = 0; 
             
-            data.tenants.forEach(tenant => { 
+            const allHosts = processedTenants.flatMap(tenant => tenant.hosts || []);
+            renderOSStats(allHosts); 
+
+            processedTenants.forEach(tenant => { 
                 const div = document.createElement('div');
                 div.className = 'tenant';
                 
@@ -893,7 +1046,6 @@ HTML_CONTENT = '''<!DOCTYPE html>
                             
                             let diskInfo = '';
                             if (host.filesystems && host.filesystems.length > 0) {
-                                // Find the maximum disk usage % for the host card preview
                                 const maxDisk = host.filesystems.reduce((max, fs) => 
                                     fs.usage_percent > max ? fs.usage_percent : max, 0);
                                 diskInfo = ` | Disk: ${maxDisk.toFixed(1)}%`;
@@ -911,6 +1063,8 @@ HTML_CONTENT = '''<!DOCTYPE html>
                                 }
                             }
                             
+                            const os_display = host.os_name && host.os_name !== 'Unknown OS' ? ` | OS: ${host.os_name}` : '';
+
                             hostsHtml += `
                                 <div class="host ${isDown ? 'error' : ''}" onclick='showHostDetails(${JSON.stringify(host)}, "${tenant.url}")'>
                                     <div class="host-name">${host.hostname || 'Unknown'}</div>
@@ -918,7 +1072,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
                                         ${statusIcon} ${statusText}
                                     </div>
                                     <div class="host-details">
-                                        CPU: ${host.cpu}% | Mem: ${host.mem}%${diskInfo}
+                                        CPU: ${host.cpu}% | Mem: ${host.mem}%${diskInfo}${os_display}
                                     </div>
                                     ${issuesHtml}
                                 </div>
@@ -951,9 +1105,9 @@ HTML_CONTENT = '''<!DOCTYPE html>
             
             displayTimeInfo(data.last_fetch_time, data.refresh_interval); 
             
-            tenantsData = data.tenants;
+            tenantsData = processedTenants; 
             const currentSort = document.getElementById('sortSelect').value;
-            const sorted = sortTenants(data.tenants, currentSort);
+            const sorted = sortTenants(processedTenants, currentSort);
             renderTenantsOnly(sorted); 
         }
 
@@ -964,6 +1118,12 @@ HTML_CONTENT = '''<!DOCTYPE html>
             let totalHosts = 0;
             let totalIssues = 0;
             let totalServices = 0; 
+            
+            const allHosts = data.flatMap(tenant => tenant.hosts || []);
+            renderOSStats(allHosts);
+            
+            // Get current filter value and sanitize it
+            const filterText = document.getElementById('hostFilter').value.toLowerCase();
             
             data.forEach(tenant => {
                 const div = document.createElement('div');
@@ -1018,14 +1178,21 @@ HTML_CONTENT = '''<!DOCTYPE html>
                                 }
                             }
                             
+                            const os_display = host.os_name && host.os_name !== 'Unknown OS' ? ` | OS: ${host.os_name}` : '';
+                            
+                            // --- LIVE FILTER LOGIC APPLIED TO HTML GENERATION ---
+                            const hostName = host.hostname || 'Unknown';
+                            const isHidden = filterText && !hostName.toLowerCase().includes(filterText) ? 'hidden' : '';
+                            // --- END LIVE FILTER LOGIC ---
+
                             hostsHtml += `
-                                <div class="host ${isDown ? 'error' : ''}" onclick='showHostDetails(${JSON.stringify(host)}, "${tenant.url}")'>
-                                    <div class="host-name">${host.hostname || 'Unknown'}</div>
+                                <div class="host ${isDown ? 'error' : ''} ${isHidden}" onclick='showHostDetails(${JSON.stringify(host)}, "${tenant.url}")'>
+                                    <div class="host-name">${hostName}</div>
                                     <div class="host-status ${isDown ? 'down' : ''}">
                                         ${statusIcon} ${statusText}
                                     </div>
                                     <div class="host-details">
-                                        CPU: ${host.cpu}% | Mem: ${host.mem}%${diskInfo}
+                                        CPU: ${host.cpu}% | Mem: ${host.mem}%${diskInfo}${os_display}
                                     </div>
                                     ${issuesHtml}
                                 </div>
@@ -1056,14 +1223,26 @@ HTML_CONTENT = '''<!DOCTYPE html>
             document.getElementById('issues').textContent = totalIssues;
         }
 
+        // Attach event listeners for sort and filter
         document.getElementById('sortSelect').addEventListener('change', (e) => {
             const sorted = sortTenants(tenantsData, e.target.value);
             renderTenantsOnly(sorted);
         });
         
+        document.getElementById('hostFilter').addEventListener('input', (e) => {
+            // Apply sorting first, then filtering, and render
+            const currentSort = document.getElementById('sortSelect').value;
+            const sorted = sortTenants(tenantsData, currentSort);
+            renderTenantsOnly(sorted);
+        });
+
+        
         fetch('/api/data')
             .then(r => r.json())
             .then(data => {
+                const username = document.querySelector('.user-info').textContent;
+                document.querySelector('.user-info').textContent = username.replace('USERNAME_PLACEHOLDER', data.username || 'N/A');
+                
                 renderTenants(data);
             })
             .catch(err => {
@@ -1178,6 +1357,8 @@ class MMonitHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 
                 html = HTML_CONTENT.replace('AUTO_REFRESH_INTERVAL_PLACEHOLDER', str(AUTO_REFRESH_INTERVAL))
+                html = html.replace('USERNAME_PLACEHOLDER', username) 
+                
                 self.wfile.write(html.encode('utf-8'))
                 
             elif parsed_path.path == '/api/data':
@@ -1196,8 +1377,8 @@ class MMonitHandler(BaseHTTPRequestHandler):
                 
                 # Prepare combined JSON response object
                 response_data = {
+                    'username': username,
                     'tenants': tenant_data,
-                    # Send Unix timestamp for client-side formatting
                     'last_fetch_time': int(LAST_FETCH_TIME.timestamp()), 
                     'refresh_interval': AUTO_REFRESH_INTERVAL
                 }
