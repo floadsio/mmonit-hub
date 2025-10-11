@@ -1,21 +1,49 @@
 #!/usr/bin/env python3
 """
-MMonit Hub - Multi-tenant monitoring dashboard
+MMonit Hub - Multi-tenant monitoring dashboard (with Basic Auth and Mobile Responsiveness)
 """
 
 import json
 import requests
 import sys
 import os
+import secrets
+import hashlib
+import hmac
+import base64
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 from pathlib import Path
+from http import HTTPStatus
+import socket
+from datetime import datetime, timezone
 
 # Default config file location
 CONFIG_FILE = 'mmonit-hub.conf'
 
 # Auto-refresh interval in seconds (0 = disabled)
 AUTO_REFRESH_INTERVAL = 30
+
+LAST_FETCH_TIME = None 
+
+# --- AUTH UTILITY FUNCTIONS ---
+
+def hash_password(password, salt=None):
+    """Hash password with salt using PBKDF2"""
+    if salt is None:
+        salt = secrets.token_hex(16)
+    pwd_hash = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
+    return f"{salt}${pwd_hash.hex()}"
+
+def verify_password(password, password_hash):
+    """Verify password against hash"""
+    try:
+        salt, hash_value = password_hash.split('$')
+        return hmac.compare_digest(hash_password(password, salt), password_hash)
+    except:
+        return False
+
+# --- CONFIG LOADING ---
 
 def load_config(config_path):
     """Load configuration from JSON file"""
@@ -25,6 +53,13 @@ def load_config(config_path):
             # Set auto_refresh from config or use default
             global AUTO_REFRESH_INTERVAL
             AUTO_REFRESH_INTERVAL = config.get('auto_refresh_seconds', AUTO_REFRESH_INTERVAL)
+            
+            # Validate users config
+            if 'users' in config and config['users']:
+                for user in config['users']:
+                    if 'username' not in user or 'password' not in user or 'tenants' not in user:
+                        print("Warning: Invalid user configuration. Each user must have username, password, and tenants.")
+            
             return config
     except FileNotFoundError:
         print(f"Error: Config file '{config_path}' not found!")
@@ -32,6 +67,13 @@ def load_config(config_path):
         print(json.dumps({
             "port": 8080,
             "auto_refresh_seconds": 30,
+            "users": [
+                {
+                    "username": "admin",
+                    "password": "hashed-password", 
+                    "tenants": ["*"]
+                }
+            ],
             "instances": [
                 {
                     "name": "tenant1",
@@ -41,17 +83,25 @@ def load_config(config_path):
                 }
             ]
         }, indent=2))
+        print("\nNote: Use the --hash-password command to generate password hashes")
         sys.exit(1)
     except json.JSONDecodeError as e:
         print(f"Error: Invalid JSON in config file: {e}")
         sys.exit(1)
 
-def query_mmonit_data(instances):
+# --- QUERY DATA ---
+
+def query_mmonit_data(instances, allowed_tenants=None):
     """Aggregate data from all MMonit instances"""
     result = []
     
     for instance in instances:
         name = instance['name']
+        
+        # Filter by allowed tenants (handles ["*"] for all access)
+        if allowed_tenants and "*" not in allowed_tenants and name not in allowed_tenants:
+            continue
+            
         url = instance['url']
         username = instance['username']
         password = instance['password']
@@ -98,7 +148,7 @@ def query_mmonit_data(instances):
                 data = response.json()
                 hosts = data.get('records', [])
                 
-                # Step 4: Fetch detailed info for each host to get disk space
+                # Step 4: Fetch detailed info for each host to get disk space and services
                 for host in hosts:
                     try:
                         detail_response = session.get(
@@ -109,10 +159,14 @@ def query_mmonit_data(instances):
                         )
                         if detail_response.status_code == 200:
                             detail_data = detail_response.json()
-                            # Extract filesystem info from services
+                            # Extract filesystem info and issues from services
                             filesystems = []
                             issues = []
                             services = detail_data.get('records', {}).get('host', {}).get('services', [])
+                            
+                            # Add service count to host object
+                            host['service_count'] = len(services) 
+                            
                             for service in services:
                                 # Track services with issues
                                 if service.get('led') in [0, 1]:  # red or yellow
@@ -142,10 +196,17 @@ def query_mmonit_data(instances):
                                         filesystems.append(fs_info)
                             host['filesystems'] = filesystems
                             host['issues'] = issues
+                        else:
+                            # Handle detail fetch failure
+                            host['filesystems'] = []
+                            host['issues'] = []
+                            host['service_count'] = 0
                     except Exception as e:
-                        print(f"Failed to get details for host {host.get('hostname')}: {e}")
+                        # Log error but continue with other hosts
                         host['filesystems'] = []
                         host['issues'] = []
+                        host['service_count'] = 0
+
                 
                 # Convert to our format with hosts array
                 result.append({
@@ -185,10 +246,13 @@ def query_mmonit_data(instances):
     
     return result
 
+# --- HTML CONTENT ---
+
 HTML_CONTENT = '''<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>MMonit Hub</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -229,6 +293,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-wrap: wrap; 
         }
         .header-content h1 { font-size: 24px; margin-bottom: 8px; }
         .subtitle { color: var(--text-secondary); font-size: 14px; }
@@ -278,6 +343,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
             justify-content: space-between;
             align-items: center;
             margin-bottom: 15px;
+            flex-wrap: wrap;
         }
         .tenant-name { font-size: 20px; font-weight: 600; cursor: pointer; }
         .tenant-name:hover { color: #3b82f6; }
@@ -333,9 +399,9 @@ HTML_CONTENT = '''<!DOCTYPE html>
         .host-issues.warning { color: #f59e0b; }
         .stats {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
             gap: 15px;
-            margin-bottom: 20px;
+            margin-bottom: 10px; 
         }
         .stat-card {
             background: var(--bg-secondary);
@@ -346,6 +412,19 @@ HTML_CONTENT = '''<!DOCTYPE html>
         .stat-value { font-size: 32px; font-weight: 700; margin-bottom: 4px; }
         .stat-label { color: var(--text-secondary); font-size: 12px; text-transform: uppercase; }
         .error-msg { color: #ef4444; font-size: 14px; }
+        .refresh-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+        .refresh-interval {
+             color: #3b82f6;
+        }
         .refresh { 
             color: #3b82f6; 
             text-decoration: none;
@@ -422,6 +501,103 @@ HTML_CONTENT = '''<!DOCTYPE html>
         .status-indicator.ok { background: #10b981; color: white; }
         .status-indicator.warning { background: #f59e0b; color: white; }
         .status-indicator.error { background: #ef4444; color: white; }
+
+        /* -------------------------------------------------------------------------- */
+        /* MOBILE OPTIMIZATIONS                                                    */
+        /* -------------------------------------------------------------------------- */
+        @media (max-width: 768px) {
+            
+            body {
+                padding: 10px;
+            }
+
+            .header {
+                flex-direction: column;
+                align-items: flex-start;
+                padding: 15px;
+            }
+
+            .controls {
+                margin-top: 15px;
+                width: 100%;
+                justify-content: space-between;
+            }
+
+            .sort-dropdown {
+                flex-grow: 1; 
+                margin-right: 10px;
+                font-size: 16px; 
+            }
+            
+            .theme-toggle {
+                 font-size: 16px; 
+            }
+
+            .stats {
+                grid-template-columns: 1fr 1fr; /* Two columns on mobile */
+                gap: 10px;
+                margin-bottom: 15px;
+            }
+            .stat-card {
+                padding: 12px;
+            }
+            .stat-value {
+                font-size: 28px;
+            }
+            .stat-label {
+                font-size: 11px;
+            }
+            
+            .tenant-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+            .tenant-name {
+                font-size: 22px;
+            }
+
+            /* FORCE 1 COLUMN for optimal mobile readability */
+            .hosts {
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
+            
+            .host {
+                padding: 15px;
+            }
+            .host-name { 
+                font-size: 16px;
+            }
+            .host-status { 
+                font-size: 14px;
+            }
+            .host-details, .host-issues {
+                font-size: 13px;
+                white-space: normal;
+            }
+            
+            .refresh-info {
+                flex-direction: column;
+                align-items: center;
+                gap: 5px;
+                font-size: 12px;
+            }
+
+            @media (max-width: 400px) {
+                .controls {
+                    flex-direction: column;
+                    align-items: stretch;
+                }
+                .sort-dropdown {
+                    margin-right: 0;
+                    margin-bottom: 8px;
+                }
+                .stats {
+                    grid-template-columns: 1fr;
+                }
+            }
+        }
     </style>
 </head>
 <body>
@@ -454,9 +630,18 @@ HTML_CONTENT = '''<!DOCTYPE html>
             <div class="stat-label">Total Hosts</div>
         </div>
         <div class="stat-card">
+            <div class="stat-value" id="total-services">-</div>
+            <div class="stat-label">Total Services</div>
+        </div>
+        <div class="stat-card">
             <div class="stat-value" id="issues">-</div>
             <div class="stat-label">Issues Detected</div>
         </div>
+    </div>
+    
+    <div class="refresh-info">
+        <span id="last-update">Last Updated: N/A</span>
+        <span id="refresh-interval-display"></span>
     </div>
     
     <div id="tenants"></div>
@@ -477,6 +662,24 @@ HTML_CONTENT = '''<!DOCTYPE html>
     
     <script>
         let tenantsData = [];
+        
+        function displayTimeInfo(lastFetchUnix, refreshSeconds) {
+            const lastUpdateElement = document.getElementById('last-update');
+            const intervalElement = document.getElementById('refresh-interval-display');
+            
+            if (lastFetchUnix) {
+                const date = new Date(lastFetchUnix * 1000);
+                lastUpdateElement.textContent = 'Last Updated: ' + date.toLocaleTimeString(); 
+            } else {
+                 lastUpdateElement.textContent = 'Last Updated: N/A';
+            }
+            
+            if (refreshSeconds > 0) {
+                 intervalElement.innerHTML = `Auto-refresh: <span class="refresh-interval">${refreshSeconds}s</span>`; 
+            } else {
+                 intervalElement.textContent = 'Auto-refresh: Disabled';
+            }
+        }
         
         // Modal functions
         function showHostDetails(host, tenantUrl) {
@@ -629,12 +832,15 @@ HTML_CONTENT = '''<!DOCTYPE html>
         }
         
         function renderTenants(data) {
+            // This function is run on initial load and full refresh, updating ALL counters/times
+            
             const container = document.getElementById('tenants');
             container.innerHTML = '';
             let totalHosts = 0;
             let totalIssues = 0;
+            let totalServices = 0; 
             
-            data.forEach(tenant => {
+            data.tenants.forEach(tenant => { 
                 const div = document.createElement('div');
                 div.className = 'tenant';
                 
@@ -652,10 +858,12 @@ HTML_CONTENT = '''<!DOCTYPE html>
                     `;
                 } else {
                     const hosts = tenant.hosts || [];
-                    // MMonit uses 'led' field: 0=red(error), 1=yellow(warning), 2=green(ok)
                     const issues = hosts.filter(h => h.led !== 2).length;
+                    
                     totalHosts += hosts.length;
                     totalIssues += issues;
+                    
+                    totalServices += hosts.reduce((sum, h) => sum + (h.service_count || 0), 0);
                     
                     div.classList.add(issues > 0 ? 'issues' : 'ok');
                     
@@ -719,22 +927,127 @@ HTML_CONTENT = '''<!DOCTYPE html>
                 container.appendChild(div);
             });
             
-            document.getElementById('total-tenants').textContent = data.length;
+            document.getElementById('total-tenants').textContent = data.tenants.length; 
             document.getElementById('total-hosts').textContent = totalHosts;
+            document.getElementById('total-services').textContent = totalServices;
+            document.getElementById('issues').textContent = totalIssues;
+            
+            displayTimeInfo(data.last_fetch_time, data.refresh_interval); 
+            
+            tenantsData = data.tenants;
+            const currentSort = document.getElementById('sortSelect').value;
+            const sorted = sortTenants(data.tenants, currentSort);
+            renderTenantsOnly(sorted); 
+        }
+
+        // Helper function to re-render data content only (used by sort/auto-refresh)
+        function renderTenantsOnly(data) {
+             const container = document.getElementById('tenants');
+            container.innerHTML = '';
+            let totalHosts = 0;
+            let totalIssues = 0;
+            let totalServices = 0; 
+            
+            data.forEach(tenant => {
+                const div = document.createElement('div');
+                div.className = 'tenant';
+                
+                if (tenant.error) {
+                    div.classList.add('error');
+                    div.innerHTML = `
+                        <div class="tenant-header">
+                            <div>
+                                <div class="tenant-name">${tenant.tenant}</div>
+                                <div class="tenant-url">${tenant.url}</div>
+                            </div>
+                            <span class="status-badge badge-error">ERROR</span>
+                        </div>
+                        <div class="error-msg">⚠️ ${tenant.error}</div>
+                    `;
+                } else {
+                    const hosts = tenant.hosts || [];
+                    const issues = hosts.filter(h => h.led !== 2).length;
+                    
+                    totalHosts += hosts.length;
+                    totalIssues += issues;
+                    totalServices += hosts.reduce((sum, h) => sum + (h.service_count || 0), 0);
+                    
+                    div.classList.add(issues > 0 ? 'issues' : 'ok');
+                    
+                    let hostsHtml = '';
+                    if (hosts.length > 0) {
+                        hostsHtml = '<div class="hosts">';
+                        hosts.forEach(host => {
+                            const isDown = host.led !== 2;
+                            const statusIcon = host.led === 0 ? '🔴' : (host.led === 1 ? '🟡' : '🟢');
+                            const statusText = host.led === 0 ? 'Error' : (host.led === 1 ? 'Warning' : 'Running');
+                            
+                            let diskInfo = '';
+                            if (host.filesystems && host.filesystems.length > 0) {
+                                const maxDisk = host.filesystems.reduce((max, fs) => 
+                                    fs.usage_percent > max ? fs.usage_percent : max, 0);
+                                diskInfo = ` | Disk: ${maxDisk.toFixed(1)}%`;
+                            }
+                            
+                            let issuesHtml = '';
+                            if (host.issues && host.issues.length > 0) {
+                                const errorIssues = host.issues.filter(i => i.led === 0);
+                                const warningIssues = host.issues.filter(i => i.led === 1);
+                                
+                                if (errorIssues.length > 0) {
+                                    issuesHtml = `<div class="host-issues">⚠️ ${errorIssues.map(i => i.name).join(', ')}</div>`;
+                                } else if (warningIssues.length > 0) {
+                                    issuesHtml = `<div class="host-issues warning">⚠️ ${warningIssues.map(i => i.name).join(', ')}</div>`;
+                                }
+                            }
+                            
+                            hostsHtml += `
+                                <div class="host ${isDown ? 'error' : ''}" onclick='showHostDetails(${JSON.stringify(host)}, "${tenant.url}")'>
+                                    <div class="host-name">${host.hostname || 'Unknown'}</div>
+                                    <div class="host-status ${isDown ? 'down' : ''}">
+                                        ${statusIcon} ${statusText}
+                                    </div>
+                                    <div class="host-details">
+                                        CPU: ${host.cpu}% | Mem: ${host.mem}%${diskInfo}
+                                    </div>
+                                    ${issuesHtml}
+                                </div>
+                            `;
+                        });
+                        hostsHtml += '</div>';
+                    }
+                    
+                    div.innerHTML = `
+                        <div class="tenant-header">
+                            <div>
+                                <div class="tenant-name" onclick="window.open('${tenant.url}', '_blank')">${tenant.tenant}</div>
+                                <div class="tenant-url">${tenant.url}</div>
+                            </div>
+                            <span class="status-badge ${issues > 0 ? 'badge-warning' : 'badge-ok'}">
+                                ${hosts.length} hosts • ${issues} issues
+                            </span>
+                        </div>
+                        ${hostsHtml}
+                    `;
+                }
+                
+                container.appendChild(div);
+            });
+            // Update counters manually on re-render
+            document.getElementById('total-hosts').textContent = totalHosts;
+            document.getElementById('total-services').textContent = totalServices;
             document.getElementById('issues').textContent = totalIssues;
         }
-        
+
         document.getElementById('sortSelect').addEventListener('change', (e) => {
             const sorted = sortTenants(tenantsData, e.target.value);
-            renderTenants(sorted);
+            renderTenantsOnly(sorted);
         });
         
         fetch('/api/data')
             .then(r => r.json())
             .then(data => {
-                tenantsData = data;
-                const sorted = sortTenants(data, 'issues-first');
-                renderTenants(sorted);
+                renderTenants(data);
             })
             .catch(err => {
                 document.getElementById('tenants').innerHTML = 
@@ -756,10 +1069,12 @@ HTML_CONTENT = '''<!DOCTYPE html>
                 fetch('/api/data')
                     .then(r => r.json())
                     .then(data => {
-                        tenantsData = data;
                         const currentSort = document.getElementById('sortSelect').value;
-                        const sorted = sortTenants(data, currentSort);
-                        renderTenants(sorted);
+                        
+                        displayTimeInfo(data.last_fetch_time, data.refresh_interval);
+                        tenantsData = data.tenants;
+                        const sorted = sortTenants(data.tenants, currentSort);
+                        renderTenantsOnly(sorted);
                     })
                     .catch(err => console.error('Auto-refresh failed:', err));
             }, AUTO_REFRESH_SECONDS * 1000);
@@ -768,48 +1083,154 @@ HTML_CONTENT = '''<!DOCTYPE html>
 </body>
 </html>'''
 
+# --- HANDLER CLASS ---
+
 class MMonitHandler(BaseHTTPRequestHandler):
     config = None
     
     def log_message(self, format, *args):
+        if args[0].split(' ')[0] in ['"GET', '"POST'] and '401' in args[0]:
+            return
+        if 'favicon.ico' in args[0]:
+            return
+        
         print(f"{self.address_string()} - {args[0]}")
+            
+    def do_AUTH_response(self):
+        """Sends a 401 response prompting for Basic Auth"""
+        self.send_response(HTTPStatus.UNAUTHORIZED)
+        self.send_header('WWW-Authenticate', 'Basic realm="MMonit Hub"')
+        self.send_header('Content-type', 'text/html')
+        self.end_headers()
+        self.wfile.write(b'<h1>Authentication Required</h1>')
+
+    def require_auth_user(self):
+        """
+        Check for Basic Auth header and validate credentials.
+        Returns username or None.
+        """
+        if 'users' not in self.config or not self.config['users']:
+            return 'anonymous'
+        
+        auth_header = self.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Basic '):
+            return None
+        
+        try:
+            encoded_credentials = auth_header.split(' ')[1]
+            decoded_credentials = base64.b64decode(encoded_credentials).decode('utf-8')
+            username, password = decoded_credentials.split(':', 1)
+        except Exception:
+            return None
+
+        for user in self.config['users']:
+            if user['username'] == username:
+                if verify_password(password, user['password']):
+                    return username
+        
+        return None
+    
+    def get_user_tenants(self, username):
+        """Get list of tenants user can access"""
+        if username == 'anonymous' or 'users' not in self.config:
+            return ['*']
+        
+        for user in self.config['users']:
+            if user['username'] == username:
+                return user.get('tenants', [])
+        
+        return []
         
     def do_GET(self):
-        parsed_path = urlparse(self.path)
+        global LAST_FETCH_TIME
         
-        if parsed_path.path == '/':
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/html; charset=utf-8')
-            self.end_headers()
-            # Replace the auto-refresh placeholder with actual value
-            html = HTML_CONTENT.replace('AUTO_REFRESH_INTERVAL_PLACEHOLDER', str(AUTO_REFRESH_INTERVAL))
-            self.wfile.write(html.encode('utf-8'))
+        try: 
+            parsed_path = urlparse(self.path)
             
-        elif parsed_path.path == '/api/data':
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json; charset=utf-8')
-            self.send_header('Cache-Control', 'no-cache')
-            self.end_headers()
+            # --- Basic Auth Enforcement ---
+            username = self.require_auth_user()
             
-            data = query_mmonit_data(self.config['instances'])
-            self.wfile.write(json.dumps(data, ensure_ascii=False).encode('utf-8'))
+            if not username:
+                self.do_AUTH_response()
+                return
+            # --- End Auth Enforcement ---
             
-        else:
-            self.send_response(404)
-            self.end_headers()
+            if parsed_path.path == '/':
+                self.send_response(HTTPStatus.OK)
+                self.send_header('Content-Type', 'text/html; charset=utf-8')
+                self.end_headers()
+                
+                html = HTML_CONTENT.replace('AUTO_REFRESH_INTERVAL_PLACEHOLDER', str(AUTO_REFRESH_INTERVAL))
+                self.wfile.write(html.encode('utf-8'))
+                
+            elif parsed_path.path == '/api/data':
+                self.send_response(HTTPStatus.OK)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.send_header('Cache-Control', 'no-cache')
+                self.end_headers()
+                
+                allowed_tenants = self.get_user_tenants(username)
+                
+                # Fetch data
+                tenant_data = query_mmonit_data(self.config['instances'], allowed_tenants)
+                
+                # Update fetch time BEFORE sending response
+                LAST_FETCH_TIME = datetime.now(timezone.utc)
+                
+                # Prepare combined JSON response object
+                response_data = {
+                    'tenants': tenant_data,
+                    # Send Unix timestamp for client-side formatting
+                    'last_fetch_time': int(LAST_FETCH_TIME.timestamp()), 
+                    'refresh_interval': AUTO_REFRESH_INTERVAL
+                }
+
+                self.wfile.write(json.dumps(response_data, ensure_ascii=False).encode('utf-8'))
+                
+            else:
+                self.send_response(HTTPStatus.NOT_FOUND)
+                self.end_headers()
+                
+        # Handle connection errors gracefully
+        except (ConnectionResetError, BrokenPipeError, socket.error) as e:
+            if isinstance(e, socket.error) and 'Broken pipe' in str(e):
+                 self.log_message("Client disconnected during response write (BrokenPipeError).")
+            elif isinstance(e, ConnectionResetError):
+                 self.log_message("Client disconnected during response write (ConnectionResetError).")
+            else:
+                 self.log_error("Connection error during do_GET: %s", str(e))
+        except Exception as e:
+            self.log_error("Unexpected error during do_GET: %s", str(e))
+            
+    # POST requests are not used in this Basic Auth version.
+    def do_POST(self):
+        self.send_response(HTTPStatus.NOT_FOUND)
+        self.end_headers()
+
+# --- MAIN FUNCTION ---
 
 def main():
-    # Check for config file argument
+    if len(sys.argv) > 1 and sys.argv[1] == '--hash-password':
+        import getpass
+        password = getpass.getpass('Enter password to hash: ')
+        password_confirm = getpass.getpass('Confirm password: ')
+        
+        if password != password_confirm:
+            print("Error: Passwords do not match")
+            sys.exit(1)
+        
+        hashed = hash_password(password)
+        print(f"\nHashed password: {hashed}")
+        print("\nAdd this to your config file in the user's password field.")
+        sys.exit(0)
+    
     config_path = sys.argv[1] if len(sys.argv) > 1 else CONFIG_FILE
     
-    # Load configuration
     config = load_config(config_path)
     port = config.get('port', 8080)
     
-    # Set config for handler
     MMonitHandler.config = config
     
-    # Disable SSL warnings if needed
     import urllib3
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     
@@ -817,6 +1238,10 @@ def main():
     print(f'MMonit Hub starting...')
     print(f'Config: {config_path}')
     print(f'Monitoring {len(config["instances"])} tenant(s)')
+    if 'users' in config and config['users']:
+        print(f'Authentication: Basic Auth Enabled ({len(config["users"])} user(s))')
+    else:
+        print(f'Authentication: Disabled (no users configured)')
     print(f'Dashboard: http://localhost:{port}')
     print('Press Ctrl+C to stop\n')
     
