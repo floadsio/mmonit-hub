@@ -182,7 +182,7 @@ def query_mmonit_data(instances, allowed_tenants=None):
                             
                             for service in services:
                                 # Track services with issues
-                                if service.get('led') in [0, 1]:  # red or yellow
+                                if service.get('led') in [0, 1]:  # red (0) or yellow (1)
                                     issues.append({
                                         'name': service.get('name', 'Unknown'),
                                         'type': service.get('type', 'Unknown'),
@@ -562,6 +562,25 @@ HTML_CONTENT = '''<!DOCTYPE html>
         .status-indicator.ok { background: #10b981; color: white; }
         .status-indicator.warning { background: #f59e0b; color: white; }
         .status-indicator.error { background: #ef4444; color: white; }
+        
+        /* DYNAMIC STATUS COLORS FOR ISSUES CARD */
+        .issue-card-error { 
+            background: #ef4444; 
+            color: white; 
+            border: 1px solid #b91c1c; 
+        }
+        .issue-card-warn { 
+            background: #f59e0b; 
+            color: white; 
+            border: 1px solid #d97706; 
+        }
+        .issue-card-ok { 
+            background: #10b981; 
+            color: white; 
+            border: 1px solid #047857; 
+        }
+        /* END DYNAMIC STATUS COLORS */
+
 
         /* -------------------------------------------------------------------------- */
         /* MOBILE OPTIMIZATIONS                                                    */
@@ -673,6 +692,99 @@ HTML_CONTENT = '''<!DOCTYPE html>
                 }
             }
         }
+
+        /* === Fix unreadable grey text on colored cards (dark + light themes) === */
+
+        /* General: ensure colored cards use white text */
+        .issue-card-error,
+        .issue-card-warn,
+        .issue-card-ok {
+        color: #ffffff;
+        }
+
+        .issue-card-error .stat-value,
+        .issue-card-error .stat-label,
+        .issue-card-warn .stat-value,
+        .issue-card-warn .stat-label,
+        .issue-card-ok .stat-value,
+        .issue-card-ok .stat-label {
+        color: #ffffff !important;
+        }
+
+        /* Slight text shadow for better readability */
+        .issue-card-error .stat-value,
+        .issue-card-warn .stat-value,
+        .issue-card-ok .stat-value {
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+        }
+
+        /* ---------- DARK THEME ---------- */
+        [data-theme="dark"] .host.error {
+        background: #3a1a1c; /* slightly brighter red background */
+        color: #ffffff;
+        }
+        [data-theme="dark"] .host.error .host-name,
+        [data-theme="dark"] .host.error .host-status,
+        [data-theme="dark"] .host.error .host-status .os-info,
+        [data-theme="dark"] .host.error .host-details,
+        [data-theme="dark"] .host.error .host-issues {
+        color: #ffffff !important;
+        }
+
+        [data-theme="dark"] .host.warning {
+        background: #3b2a0a; /* warmer dark yellow tone */
+        color: #ffffff;
+        }
+        [data-theme="dark"] .host.warning .host-name,
+        [data-theme="dark"] .host.warning .host-status,
+        [data-theme="dark"] .host.warning .host-details {
+        color: #ffffff !important;
+        }
+
+        [data-theme="dark"] .host.ok {
+        background: #11321e; /* darker green background */
+        color: #ffffff;
+        }
+
+        /* ---------- LIGHT THEME ---------- */
+        [data-theme="light"] .issue-card-error {
+        background: #dc2626; /* solid red */
+        border-color: #b91c1c;
+        color: #ffffff;
+        }
+        [data-theme="light"] .issue-card-warn {
+        background: #f59e0b;
+        border-color: #d97706;
+        color: #ffffff;
+        }
+        [data-theme="light"] .issue-card-ok {
+        background: #10b981;
+        border-color: #047857;
+        color: #ffffff;
+        }
+
+        [data-theme="light"] .host.error {
+        background: #fee2e2; /* lighter red */
+        color: #7f1d1d;
+        }
+        [data-theme="light"] .host.warning {
+        background: #fef3c7; /* soft yellow */
+        color: #78350f;
+        }
+        [data-theme="light"] .host.ok {
+        background: #ecfdf5; /* pale green */
+        color: #064e3b;
+        }
+
+        /* Prevent grey text override in colored hosts */
+        [data-theme="light"] .host.error .host-name,
+        [data-theme="light"] .host.error .host-status,
+        [data-theme="light"] .host.warning .host-name,
+        [data-theme="light"] .host.warning .host-status,
+        [data-theme="light"] .host.ok .host-name,
+        [data-theme="light"] .host.ok .host-status {
+        color: inherit !important;
+        }
     </style>
 </head>
 <body>
@@ -717,7 +829,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
             <div class="stat-value" id="total-services">-</div>
             <div class="stat-label">Total Services</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" id="issues-card">
             <div class="stat-value" id="issues">-</div>
             <div class="stat-label">Issues Detected</div>
         </div>
@@ -750,11 +862,6 @@ HTML_CONTENT = '''<!DOCTYPE html>
         let tenantsData = [];
         
         // --- UTILITY FUNCTIONS ---
-        
-        // Function to format uptime (REMOVED)
-        function formatUptime(seconds) {
-            return 'N/A (Uptime Removed)';
-        }
         
         // Helper for numeric version comparison (e.g., "14.1.2" vs "14.2.0")
         function compareVersions(v1, v2) {
@@ -812,7 +919,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
         function renderOSStats(allHosts) {
             const osCounts = allHosts.reduce((acc, host) => {
                 if (host.os_name && host.os_name !== 'OS N/A') {
-                    const osKey = host.os_name + (host.os_release ? ' ' + host.os_release.split('.')[0] : ''); 
+                    const osKey = host.os_name; // Use only OS name for grouping
                     acc[osKey] = (acc[osKey] || 0) + 1;
                 }
                 return acc;
@@ -1154,6 +1261,25 @@ HTML_CONTENT = '''<!DOCTYPE html>
                 container.appendChild(div);
             });
             
+            // --- DYNAMIC STATUS CARD FIX ---
+            const issuesCard = document.getElementById('issues-card');
+            issuesCard.className = 'stat-card'; // Reset classes
+            
+            if (totalIssues > 0) {
+                 // Check if any host has a red (0) led status in its issues list
+                 const hasError = allHosts.some(host => (host.issues || []).some(issue => issue.led === 0));
+                 
+                 if (hasError) {
+                     issuesCard.classList.add('issue-card-error');
+                 } else {
+                     issuesCard.classList.add('issue-card-warn');
+                 }
+            } else {
+                 issuesCard.classList.add('issue-card-ok');
+            }
+            // --- END DYNAMIC STATUS CARD FIX ---
+
+            
             document.getElementById('total-tenants').textContent = data.tenants.length; 
             document.getElementById('total-hosts').textContent = totalHosts;
             document.getElementById('total-services').textContent = totalServices;
@@ -1254,6 +1380,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
                                 }
                             }
 
+                            // FIX: Corrected onclick handler to pass host data and tenant URL correctly
                             hostsHtml += `
                                 <div class="host ${isDown ? 'error' : ''} ${isHidden}" onclick='showHostDetails(${JSON.stringify(host)}, "${tenant.url}")'>
                                     <div class="host-name">${hostName}</div>
@@ -1287,6 +1414,24 @@ HTML_CONTENT = '''<!DOCTYPE html>
                 
                 container.appendChild(div);
             });
+            
+            // --- DYNAMIC STATUS CARD FIX ---
+            const issuesCard = document.getElementById('issues-card');
+            issuesCard.className = 'stat-card'; // Reset classes
+            
+            if (totalIssues > 0) {
+                 const hasError = allHosts.some(host => (host.issues || []).some(issue => issue.led === 0));
+                 
+                 if (hasError) {
+                     issuesCard.classList.add('issue-card-error');
+                 } else {
+                     issuesCard.classList.add('issue-card-warn');
+                 }
+            } else {
+                 issuesCard.classList.add('issue-card-ok');
+            }
+            // --- END DYNAMIC STATUS CARD FIX ---
+
             // Update counters manually on re-render
             document.getElementById('total-hosts').textContent = totalHosts;
             document.getElementById('total-services').textContent = totalServices;
