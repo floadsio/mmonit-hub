@@ -8,7 +8,11 @@ A lightweight, multi-tenant monitoring dashboard that aggregates multiple M/Moni
 
 Try the interactive demo with fake data to see how MMonit Hub works.
 
-![MMonit Hub Dashboard](screenshot.png)
+### Dark Theme
+![MMonit Hub - Dark Theme](screenshot-dark.jpg)
+
+### Light Theme
+![MMonit Hub - Light Theme](screenshot-light.jpg)
 
 ## Features
 
