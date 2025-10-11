@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>MMonit Hub - Demo</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-tertiary: #0f172a;
+            --text-primary: #e2e8f0;
+            --text-secondary: #94a3b8;
+            --border-color: #334155;
+            --border-subtle: #64748b;
+        }
+        
+        [data-theme="light"] {
+            --bg-primary: #f8fafc;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #f1f5f9;
+            --text-primary: #0f172a;
+            --text-secondary: #64748b;
+            --border-color: #e2e8f0;
+            --border-subtle: #cbd5e1;
+        }
+        
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            padding: 20px;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        .demo-notice {
+            background: #3b82f6;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: 500;
+        }
+        .demo-notice a {
+            color: white;
+            text-decoration: underline;
+        }
+        .header {
+            background: var(--bg-secondary);
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #3b82f6;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header-content h1 { font-size: 24px; margin-bottom: 8px; }
+        .subtitle { color: var(--text-secondary); font-size: 14px; }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .sort-dropdown {
+            padding: 8px 12px;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            font-size: 14px;
+            cursor: pointer;
+        }
+        
+        .theme-toggle {
+            padding: 8px 12px;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .theme-toggle:hover {
+            background: var(--border-color);
+        }
+        
+        .tenant {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-left: 4px solid var(--border-subtle);
+        }
+        .tenant.error { border-left-color: #ef4444; }
+        .tenant.issues { border-left-color: #f59e0b; }
+        .tenant.ok { border-left-color: #10b981; }
+        .tenant-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .tenant-name { font-size: 20px; font-weight: 600; cursor: pointer; }
+        .tenant-name:hover { color: #3b82f6; }
+        .tenant-url { color: var(--text-secondary); font-size: 12px; margin-top: 4px; }
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .badge-error { background: #ef4444; color: white; }
+        .badge-warning { background: #f59e0b; color: white; }
+        .badge-ok { background: #10b981; color: white; }
+        .hosts {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .host {
+            background: var(--bg-tertiary);
+            padding: 12px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+        .host:hover {
+            transform: translateY(-2px);
+            border-color: #3b82f6;
+        }
+        .host.error { 
+            border-color: #ef4444;
+        }
+        [data-theme="dark"] .host.error {
+            background: #1e1518;
+        }
+        [data-theme="light"] .host.error {
+            background: #fef2f2;
+        }
+        .host-name { font-weight: 500; margin-bottom: 4px; }
+        .host-status { font-size: 12px; color: var(--text-secondary); }
+        .host-status.down { color: #ef4444; }
+        .host-details { font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
+        .host-issues { 
+            font-size: 11px; 
+            color: #ef4444; 
+            margin-top: 6px; 
+            padding-top: 6px;
+            border-top: 1px solid var(--border-color);
+            font-weight: 500;
+        }
+        .host-issues.warning { color: #f59e0b; }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: var(--bg-secondary);
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-value { font-size: 32px; font-weight: 700; margin-bottom: 4px; }
+        .stat-label { color: var(--text-secondary); font-size: 12px; text-transform: uppercase; }
+    </style>
+</head>
+<body data-theme="dark">
+    <div class="demo-notice">
+        📊 This is a demo with fake data. <a href="https://github.com/floadsio/mmonit-hub" target="_blank">View the project on GitHub</a>
+    </div>
+
+    <div class="header">
+        <div class="header-content">
+            <h1>🖥️ MMonit Hub</h1>
+            <div class="subtitle">Multi-tenant monitoring dashboard</div>
+        </div>
+        <div class="controls">
+            <select class="sort-dropdown" id="sortSelect">
+                <option value="issues-first" selected>Issues First</option>
+                <option value="name">Sort by Name</option>
+                <option value="hosts">Sort by Host Count</option>
+                <option value="cpu">Sort by CPU Usage</option>
+                <option value="memory">Sort by Memory Usage</option>
+            </select>
+            <button class="theme-toggle" id="themeToggle">
+                <span id="themeIcon">☀️</span>
+            </button>
+        </div>
+    </div>
+    
+    <div class="stats">
+        <div class="stat-card">
+            <div class="stat-value">4</div>
+            <div class="stat-label">Total Tenants</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">27</div>
+            <div class="stat-label">Total Hosts</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">3</div>
+            <div class="stat-label">Issues Detected</div>
+        </div>
+    </div>
+    
+    <div id="tenants">
+        <!-- Tenant with connection error -->
+        <div class="tenant error">
+            <div class="tenant-header">
+                <div>
+                    <div class="tenant-name">Development Cluster</div>
+                    <div class="tenant-url">https://mmonit-dev.example.com:8080</div>
+                </div>
+                <span class="status-badge badge-error">ERROR</span>
+            </div>
+            <div style="color: #ef4444; font-size: 14px;">⚠️ Connection failed - Unable to reach mmonit instance</div>
+        </div>
+
+        <!-- Tenant with issues -->
+        <div class="tenant issues">
+            <div class="tenant-header">
+                <div>
+                    <div class="tenant-name">Production US-East</div>
+                    <div class="tenant-url">https://mmonit-us.example.com:8080</div>
+                </div>
+                <span class="status-badge badge-warning">8 hosts • 2 issues</span>
+            </div>
+            <div class="hosts">
+                <div class="host">
+                    <div class="host-name">web-01.prod</div>
+                    <div class="host-status">🟢 Running</div>
+                    <div class="host-details">CPU: 12.4% | Mem: 45.2% | Disk: 58.3%</div>
+                </div>
+                <div class="host error">
+                    <div class="host-name">web-02.prod</div>
+                    <div class="host-status down">🔴 Error</div>
+                    <div class="host-details">CPU: 0.8% | Mem: 23.1% | Disk: 62.1%</div>
+                    <div class="host-issues">⚠️ nginx, php-fpm</div>
+                </div>
+                <div class="host">
+                    <div class="host-name">db-primary.prod</div>
+                    <div class="host-status">🟢 Running</div>
+                    <div class="host-details">CPU: 34.7% | Mem: 78.4% | Disk: 71.2%</div>
+                </div>
+                <div class="host">
+                    <div class="host-name">db-replica.prod</div>
+                    <div class="host-status">🟢 Running</div>
+                    <div class="host-details">CPU: 28.2% | Mem: 72.8% | Disk: 69.5%</div>
+                </div>
+                <div class="host">
+                    <div class="host-name">cache-01.prod</div>
+                    <div class="host-status">🟢 Running</div>
+                    <div class="host-details">CPU: 5.1% | Mem: 32.4% | Disk: 42.8%</div>
+                </div>
+                <div class="host">
+                    <div class="host-name">api-gateway.prod</div>
+                    <div class="host-status">🟢 Running</div>
+                    <div class="host-details">CPU: 18.9% | Mem: 54.3% | Disk: 55.7%</div>
+                </div>
+                <div class="host error">
+                    <div class="host-name">worker-01.prod</div>
+                    <div class="host-status down">🟡 Warning</div>
+                    <div class="host-details">CPU: 89.3% | Mem: 91.2% | Disk: 88.4%</div>
+                    <div class="host-issues warning">⚠️ disk space</div>
+                </div>
+                <div class="host">
+                    <div class="host-name">worker-02.prod</div>
+                    <div class="host-status">🟢 Running</div>
+                    <div class="host-details">CPU: 42.6% | Mem: 68.9% | Disk: 64.3%</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Healthy tenant -->
+        <div class="tenant ok">
+            <div class="tenant-header">
+                <div>
+                    <div class="tenant-name">Production EU</div>
+                    <div class="tenant-url">https://mmonit-eu.example.com:8080</div>
+                </div>
+                <span class="status-badge badge-ok">12 hosts • 0 issues</span>
+            </div>
+            <div class="hosts">
+                <div class="host">
+                    <div class="host-name">web-01.eu</div>
+                    <div class="host-status">🟢 Running</div>
+                    <div class="host-details">CPU: 8.3% | Mem: 42.1% | Disk: 51.2%</div>
+                </div>
+                <div class="host">
+                    <div class="host-name">web-02.eu</div>
+                    <div class="host-status">🟢 Running</div>
+                    <div class="host-details">CPU: 9.7% | Mem: 44.8% | Disk: 52.7%</div>
+                </div>
+                <div class="host">
+                    <div class="host-name">web-03.eu</div>
+                    <div class="host-status">🟢 Running</div>
+                    <div class="host-details">CPU: 7.2% | Mem: 39.3% | Disk: 49.8%</div>
+                </div>
+                <div class="host">
+                    <div class="host-name">db-primary.eu</div>
+                    <div class="host-status">🟢 Running</div>
+                    <div class="host-details">CPU: 22.4% | Mem: 68.2% | Disk: 65.4%</div>
+                </div>
+                <div class="host">
+                    <div class="host-name">db-replica-01.eu</div>
+                    <div class="host-status">🟢 Running</div>
+                    <div class="host-details">CPU: 19.8% | Mem: 64.7% | Disk: 63.1%</div>
+                </div>
+                <div class="host">
+                    <div class="host-name">db-replica-02.eu</div>
+                    <div class="host-status">🟢 Running</div>
+                    <div class="host-details">CPU: 18.3% | Mem: 62.4% | Disk: 61.9%</div>
+                </div>
+                <div class="host">
+                    <div class="host-name">cache-01.eu</div>
+                    <div class="host-status">🟢 Running</div>
+                    <div class="host-details">CPU: 4.2% | Mem: 28.9% | Disk: 38.2%</div>
+                </div>
+                <div class="host">
+                    <div class="host-name">cache-02.eu</div>
+                    <div class="host-status">🟢 Running</div>
+                    <div class="host-details">CPU: 3.8% | Mem: 26.4% | Disk: 36.7%</div>
+                </div>
+                <div class="host">
+                    <div class="host-name">lb-01.eu</div>
+                    <div class="host-status">🟢 Running</div>
+                    <div class="host-details">CPU: 6.4% | Mem: 18.7% | Disk: 32.4%</div>
+                </div>
+                <div class="host">
+                    <div class="host-name">lb-02.eu</div>
+                    <div class="host-status">🟢 Running</div>
+                    <div class="host-details">CPU: 5.9% | Mem: 17.2% | Disk: 31.8%</div>
+                </div>
+                <div class="host">
+                    <div class="host-name">worker-01.eu</div>
+                    <div class="host-status">🟢 Running</div>
+                    <div class="host-details">CPU: 31.2% | Mem: 58.4% | Disk: 57.3%</div>
+                </div>
+                <div class="host">
+                    <div class="host-name">worker-02.eu</div>
+                    <div class="host-status">🟢 Running</div>
+                    <div class="host-details">CPU: 28.7% | Mem: 55.1% | Disk: 54.8%</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Small staging environment -->
+        <div class="tenant ok">
+            <div class="tenant-header">
+                <div>
+                    <div class="tenant-name">Staging</div>
+                    <div class="tenant-url">https://mmonit-staging.example.com:8080</div>
+                </div>
+                <span class="status-badge badge-ok">6 hosts • 0 issues</span>
+            </div>
+            <div class="hosts">
+                <div class="host">
+                    <div class="host-name">web.staging</div>
+                    <div class="host-status">🟢 Running</div>
+                    <div class="host-details">CPU: 3.2% | Mem: 24.7% | Disk: 41.2%</div>
+                </div>
+                <div class="host">
+                    <div class="host-name">db.staging</div>
+                    <div class="host-status">🟢 Running</div>
+                    <div class="host-details">CPU: 8.4% | Mem: 38.2% | Disk: 48.9%</div>
+                </div>
+                <div class="host">
+                    <div class="host-name">cache.staging</div>
+                    <div class="host-status">🟢 Running</div>
+                    <div class="host-details">CPU: 1.8% | Mem: 15.3% | Disk: 28.4%</div>
+                </div>
+                <div class="host">
+                    <div class="host-name">api.staging</div>
+                    <div class="host-status">🟢 Running</div>
+                    <div class="host-details">CPU: 4.7% | Mem: 29.8% | Disk: 38.7%</div>
+                </div>
+                <div class="host">
+                    <div class="host-name">worker.staging</div>
+                    <div class="host-status">🟢 Running</div>
+                    <div class="host-details">CPU: 12.3% | Mem: 41.2% | Disk: 45.3%</div>
+                </div>
+                <div class="host">
+                    <div class="host-name">monitor.staging</div>
+                    <div class="host-status">🟢 Running</div>
+                    <div class="host-details">CPU: 2.1% | Mem: 18.4% | Disk: 34.6%</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const themeToggle = document.getElementById('themeToggle');
+        const themeIcon = document.getElementById('themeIcon');
+        
+        // Initialize theme
+        function initTheme() {
+            const savedTheme = localStorage.getItem('mmonit-hub-demo-theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const theme = savedTheme || (prefersDark ? 'dark' : 'light');
+            setTheme(theme);
+        }
+        
+        function setTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            themeIcon.textContent = theme === 'dark' ? '☀️' : '🌙';
+            localStorage.setItem('mmonit-hub-demo-theme', theme);
+        }
+        
+        themeToggle.addEventListener('click', () => {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            setTheme(currentTheme === 'dark' ? 'light' : 'dark');
+        });
+        
+        initTheme();
+        
+        // System theme change listener
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+            if (!localStorage.getItem('mmonit-hub-demo-theme')) {
+                setTheme(e.matches ? 'dark' : 'light');
+            }
+        });
+    </script>
+</body>
+</html>
