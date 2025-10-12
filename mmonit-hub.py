@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MMonit Hub - Multi-tenant monitoring dashboard (with Basic Auth, Mobile Responsiveness, and Live Filter)
+M/Monit Hub - Multi-tenant monitoring dashboard (with Basic Auth, Mobile Responsiveness, and Live Filter)
 """
 
 import json
@@ -11,14 +11,14 @@ import secrets
 import hashlib
 import hmac
 import base64
-import re 
+import re
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 from pathlib import Path
 from http import HTTPStatus
 import socket
 from datetime import datetime, timezone
-from collections import Counter 
+from collections import Counter
 
 # Default config file location
 CONFIG_FILE = 'mmonit-hub.conf'
@@ -26,7 +26,7 @@ CONFIG_FILE = 'mmonit-hub.conf'
 # Auto-refresh interval in seconds (0 = disabled)
 AUTO_REFRESH_INTERVAL = 30
 
-LAST_FETCH_TIME = None 
+LAST_FETCH_TIME = None
 
 # --- AUTH UTILITY FUNCTIONS ---
 
@@ -94,7 +94,7 @@ def load_config(config_path):
 # --- QUERY DATA ---
 
 def query_mmonit_data(instances, allowed_tenants=None):
-    """Aggregate data from all MMonit instances"""
+    """Aggregate data from all M/Monit instances"""
     result = []
     
     for instance in instances:
@@ -169,8 +169,6 @@ def query_mmonit_data(instances, allowed_tenants=None):
                             # OS Info
                             host['os_name'] = platform.get('name', 'OS N/A')
                             host['os_release'] = platform.get('release', '') # e.g., '14.3-RELEASE-p3' or '12.0.12'
-                            
-                            # Uptime is intentionally REMOVED
                             # --- END OS EXTRACTION ---
 
                             # Extract filesystem info and issues from services
@@ -178,7 +176,11 @@ def query_mmonit_data(instances, allowed_tenants=None):
                             issues = []
                             services = host_records.get('services', [])
                             
-                            host['service_count'] = len(services) 
+                            host['service_count'] = len(services)
+
+                            # NEW: List of services for UI modal and search
+                            services_detail = []
+                            service_names = []
                             
                             for service in services:
                                 # Track services with issues
@@ -207,22 +209,38 @@ def query_mmonit_data(instances, allowed_tenants=None):
                                             fs_info['total_mb'] = stat.get('value')
                                     if fs_info['usage_percent'] is not None:
                                         filesystems.append(fs_info)
+
+                                # Build compact list for modal/search
+                                services_detail.append({
+                                    'name': service.get('name', 'Unknown'),
+                                    'type': service.get('type', 'Unknown'),
+                                    'status': service.get('status', 'Unknown'),
+                                    'led': service.get('led', 2)
+                                })
+                                if service.get('name'):
+                                    service_names.append(service['name'])
+
                             host['filesystems'] = filesystems
                             host['issues'] = issues
+                            host['services_detail'] = services_detail
+                            host['service_names'] = service_names
                         else:
                             host['filesystems'] = []
                             host['issues'] = []
                             host['service_count'] = 0
                             host['os_name'] = 'OS N/A'
                             host['os_release'] = ''
-                    except Exception as e:
+                            host['services_detail'] = []
+                            host['service_names'] = []
+                    except Exception:
                         host['filesystems'] = []
                         host['issues'] = []
                         host['service_count'] = 0
                         host['os_name'] = 'OS N/A'
                         host['os_release'] = ''
+                        host['services_detail'] = []
+                        host['service_names'] = ''
 
-                
                 # Convert to our format with hosts array
                 result.append({
                     'tenant': name,
@@ -268,7 +286,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>MMonit Hub</title>
+    <title>M/Monit Hub</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
@@ -314,6 +332,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
             margin-right: 20px;
         }
         .header-content h1 { font-size: 24px; margin-bottom: 8px; }
+        <!-— updated subtitle text —->
         .subtitle { color: var(--text-secondary); font-size: 14px; }
         
         .controls {
@@ -346,7 +365,6 @@ HTML_CONTENT = '''<!DOCTYPE html>
             display: inline-block;
             transition: background 0.2s, color 0.2s;
         }
-
         .logout-btn:hover {
             background: var(--border-color);
             color: var(--text-primary);
@@ -431,10 +449,12 @@ HTML_CONTENT = '''<!DOCTYPE html>
             border-color: #ef4444;
         }
         [data-theme="dark"] .host.error {
-            background: #1e1518;
+            background: #3a1a1c; /* improved contrast */
+            color: #ffffff;
         }
         [data-theme="light"] .host.error {
-            background: #fef2f2;
+            background: #fee2e2;
+            color: #7f1d1d;
         }
         .host-name { font-weight: 500; margin-bottom: 4px; }
         .host-status { 
@@ -582,8 +602,17 @@ HTML_CONTENT = '''<!DOCTYPE html>
             color: white; 
             border: 1px solid #047857; 
         }
+        /* Force white text inside colored stat cards */
+        .issue-card-error .stat-value,
+        .issue-card-error .stat-label,
+        .issue-card-warn .stat-value,
+        .issue-card-warn .stat-label,
+        .issue-card-ok .stat-value,
+        .issue-card-ok .stat-label {
+          color: #ffffff !important;
+          text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+        }
         /* END DYNAMIC STATUS COLORS */
-
 
         /* -------------------------------------------------------------------------- */
         /* MOBILE OPTIMIZATIONS                                                    */
@@ -632,7 +661,6 @@ HTML_CONTENT = '''<!DOCTYPE html>
             .logout-btn {
                 flex-shrink: 0;
             }
-
 
             .stats {
                 grid-template-columns: 1fr 1fr; 
@@ -695,105 +723,12 @@ HTML_CONTENT = '''<!DOCTYPE html>
                 }
             }
         }
-
-        /* === Fix unreadable grey text on colored cards (dark + light themes) === */
-
-        /* General: ensure colored cards use white text */
-        .issue-card-error,
-        .issue-card-warn,
-        .issue-card-ok {
-        color: #ffffff;
-        }
-
-        .issue-card-error .stat-value,
-        .issue-card-error .stat-label,
-        .issue-card-warn .stat-value,
-        .issue-card-warn .stat-label,
-        .issue-card-ok .stat-value,
-        .issue-card-ok .stat-label {
-        color: #ffffff !important;
-        }
-
-        /* Slight text shadow for better readability */
-        .issue-card-error .stat-value,
-        .issue-card-warn .stat-value,
-        .issue-card-ok .stat-value {
-        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
-        }
-
-        /* ---------- DARK THEME ---------- */
-        [data-theme="dark"] .host.error {
-        background: #3a1a1c; /* slightly brighter red background */
-        color: #ffffff;
-        }
-        [data-theme="dark"] .host.error .host-name,
-        [data-theme="dark"] .host.error .host-status,
-        [data-theme="dark"] .host.error .host-status .os-info,
-        [data-theme="dark"] .host.error .host-details,
-        [data-theme="dark"] .host.error .host-issues {
-        color: #ffffff !important;
-        }
-
-        [data-theme="dark"] .host.warning {
-        background: #3b2a0a; /* warmer dark yellow tone */
-        color: #ffffff;
-        }
-        [data-theme="dark"] .host.warning .host-name,
-        [data-theme="dark"] .host.warning .host-status,
-        [data-theme="dark"] .host.warning .host-details {
-        color: #ffffff !important;
-        }
-
-        [data-theme="dark"] .host.ok {
-        background: #11321e; /* darker green background */
-        color: #ffffff;
-        }
-
-        /* ---------- LIGHT THEME ---------- */
-        [data-theme="light"] .issue-card-error {
-        background: #dc2626; /* solid red */
-        border-color: #b91c1c;
-        color: #ffffff;
-        }
-        [data-theme="light"] .issue-card-warn {
-        background: #f59e0b;
-        border-color: #d97706;
-        color: #ffffff;
-        }
-        [data-theme="light"] .issue-card-ok {
-        background: #10b981;
-        border-color: #047857;
-        color: #ffffff;
-        }
-
-        [data-theme="light"] .host.error {
-        background: #fee2e2; /* lighter red */
-        color: #7f1d1d;
-        }
-        [data-theme="light"] .host.warning {
-        background: #fef3c7; /* soft yellow */
-        color: #78350f;
-        }
-        [data-theme="light"] .host.ok {
-        background: #ecfdf5; /* pale green */
-        color: #064e3b;
-        }
-
-        /* Prevent grey text override in colored hosts */
-        [data-theme="light"] .host.error .host-name,
-        [data-theme="light"] .host.error .host-status,
-        [data-theme="light"] .host.warning .host-name,
-        [data-theme="light"] .host.warning .host-status,
-        [data-theme="light"] .host.ok .host-name,
-        [data-theme="light"] .host.ok .host-status {
-        color: inherit !important;
-        }
     </style>
 </head>
 <body>
     <div class="header">
         <div class="header-content">
-            <h1>🖥️ MMonit Hub</h1>
+            <h1>🖥️ M/Monit Hub</h1>
             <div class="subtitle">Multi-tenant monitoring dashboard</div>
         </div>
         <div class="controls">
@@ -801,7 +736,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
                 <span class="user-info">👤 USERNAME_PLACEHOLDER</span>
                 <button class="logout-btn" id="logoutBtn">Logout / Change User</button>
             </div>
-            <input type="text" id="hostFilter" placeholder="Filter hosts..." style="padding: 8px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary); font-size: 14px; flex-grow: 1;">
+            <input type="text" id="hostFilter" placeholder="Filter hosts, OS, versions, services…" style="padding: 8px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary); font-size: 14px; flex-grow: 1;">
             <select class="sort-dropdown" id="sortSelect">
                 <option value="issues-first">Issues First</option>
                 <option value="name">Sort by Name</option>
@@ -847,10 +782,8 @@ HTML_CONTENT = '''<!DOCTYPE html>
     
     <div id="tenants"></div>
     
-    <div style="text-align: center; margin-top: 20px;">
-        <a href="/" class="refresh">🔄 Refresh</a>
-    </div>
-    
+    <!-- Removed bottom manual refresh button -->
+
     <div id="hostModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -978,7 +911,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
                 });
                 filesystemsHtml += '</div></div>';
             }
-            
+
             let issuesDetailsHtml = '';
             if (host.issues && host.issues.length > 0) {
                 issuesDetailsHtml = '<div class="detail-row"><div class="detail-label">Service Issues</div><div class="detail-value">';
@@ -995,6 +928,22 @@ HTML_CONTENT = '''<!DOCTYPE html>
                 });
                 issuesDetailsHtml += '</div></div>';
             }
+
+            // NEW: full services list
+            let servicesDetailsHtml = '';
+            if (host.services_detail && host.services_detail.length > 0) {
+                servicesDetailsHtml = '<div class="detail-row"><div class="detail-label">Services</div><div class="detail-value" style="width:100%;">';
+                host.services_detail.forEach(svc => {
+                    const svcClass = svc.led === 0 ? 'error' : (svc.led === 1 ? 'warning' : 'ok');
+                    servicesDetailsHtml += `
+                        <div style="margin-bottom: 8px; display:flex; justify-content:space-between; gap:12px;">
+                            <div><strong>${svc.name}</strong> <span style="color: var(--text-secondary)">(${svc.type})</span></div>
+                            <div><span class="status-indicator ${svcClass}">${svc.status || (svc.led === 2 ? 'OK' : '')}</span></div>
+                        </div>
+                    `;
+                });
+                servicesDetailsHtml += '</div></div>';
+            }
             
             modalTitle.textContent = host.hostname;
             modalBody.innerHTML = `
@@ -1005,6 +954,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
                     </div>
                 </div>
                 ${issuesDetailsHtml}
+                ${servicesDetailsHtml}
                 <div class="detail-row">
                     <div class="detail-label">Operating System</div>
                     <div class="detail-value">${host.os_name} (${host.os_release || 'N/A'})</div>
@@ -1032,7 +982,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
                 ${filesystemsHtml}
                 <div style="margin-top: 20px; text-align: center;">
                     <a href="${tenantUrl}/admin/hosts/get?id=${host.id}" target="_blank" class="refresh">
-                        View in MMonit →
+                        View in M/Monit →
                     </a>
                 </div>
             `;
@@ -1227,7 +1177,9 @@ HTML_CONTENT = '''<!DOCTYPE html>
                             const hostName = host.hostname || 'Unknown';
                             const filterText = document.getElementById('hostFilter').value.toLowerCase();
                             
-                            const hostSearchableText = `${hostName} ${os_name} ${os_release}`.toLowerCase();
+                            // Include service names for searching
+                            const serviceText = (host.service_names || []).join(' ');
+                            const hostSearchableText = `${hostName} ${os_name} ${os_release} ${serviceText}`.toLowerCase();
                             const isHidden = filterText && !hostSearchableText.includes(filterText) ? 'hidden' : '';
 
                             hostsHtml += `
@@ -1369,10 +1321,10 @@ HTML_CONTENT = '''<!DOCTYPE html>
 
                             const hostName = host.hostname || 'Unknown';
                             
-                            // --- ENHANCED FILTERING LOGIC ---
-                            const hostSearchableText = `${hostName} ${os_name} ${os_release}`.toLowerCase();
+                            // Include service names in search
+                            const serviceText = (host.service_names || []).join(' ');
+                            let hostSearchableText = `${hostName} ${os_name} ${os_release} ${serviceText}`.toLowerCase();
                             let isHidden = filterText && !hostSearchableText.includes(filterText) ? 'hidden' : '';
-                            // --- END ENHANCED FILTERING LOGIC ---
 
                             // Apply OS Update filter
                             if (selectedSort === 'os-update-needed' && !isHidden) {
@@ -1383,7 +1335,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
                                 }
                             }
 
-                            // FIX: Corrected onclick handler to pass host data and tenant URL correctly
+                            // Correct onclick handler to pass host data and tenant URL
                             hostsHtml += `
                                 <div class="host ${isDown ? 'error' : ''} ${isHidden}" onclick='showHostDetails(${JSON.stringify(host)}, "${tenant.url}")'>
                                     <div class="host-name">${hostName}</div>
@@ -1512,7 +1464,7 @@ class MMonitHandler(BaseHTTPRequestHandler):
     def do_AUTH_response(self):
         """Sends a 401 response prompting for Basic Auth"""
         self.send_response(HTTPStatus.UNAUTHORIZED)
-        self.send_header('WWW-Authenticate', 'Basic realm="MMonit Hub"')
+        self.send_header('WWW-Authenticate', 'Basic realm="M/Monit Hub"')
         self.send_header('Content-type', 'text/html')
         self.end_headers()
         self.wfile.write(b'<h1>Authentication Required</h1>')
@@ -1650,7 +1602,7 @@ def main():
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     
     server = HTTPServer(('', port), MMonitHandler)
-    print(f'MMonit Hub starting...')
+    print(f'M/Monit Hub starting...')
     print(f'Config: {config_path}')
     print(f'Monitoring {len(config["instances"])} tenant(s)')
     if 'users' in config and config['users']:
