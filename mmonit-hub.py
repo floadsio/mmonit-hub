@@ -723,6 +723,33 @@ HTML_CONTENT = '''<!DOCTYPE html>
                 }
             }
         }
+
+        /* Services list layout */
+        .services-row {                 /* make the 'Services' row stack vertically */
+        flex-direction: column;
+        align-items: stretch;
+        }
+        .services-row .detail-label {   /* label on its own line */
+        margin-bottom: 8px;
+        }
+
+        /* Each service line */
+        .service-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        padding: 6px 0;
+        border-bottom: 1px solid var(--border-color);
+        }
+        .service-item:last-child { border-bottom: 0; }
+
+        /* Make status badges look like rounded pills */
+        .status-indicator { 
+        border-radius: 9999px;        /* pill */
+        padding: 4px 10px;            /* a bit wider */
+        font-weight: 700;             /* crisper text on pills */
+        }
     </style>
 </head>
 <body>
@@ -929,16 +956,22 @@ HTML_CONTENT = '''<!DOCTYPE html>
                 issuesDetailsHtml += '</div></div>';
             }
 
-            // NEW: full services list
             let servicesDetailsHtml = '';
             if (host.services_detail && host.services_detail.length > 0) {
-                servicesDetailsHtml = '<div class="detail-row"><div class="detail-label">Services</div><div class="detail-value" style="width:100%;">';
+                servicesDetailsHtml = '<div class="detail-row services-row"><div class="detail-label">Services</div><div class="detail-value" style="width:100%;">';
                 host.services_detail.forEach(svc => {
                     const svcClass = svc.led === 0 ? 'error' : (svc.led === 1 ? 'warning' : 'ok');
                     servicesDetailsHtml += `
-                        <div style="margin-bottom: 8px; display:flex; justify-content:space-between; gap:12px;">
-                            <div><strong>${svc.name}</strong> <span style="color: var(--text-secondary)">(${svc.type})</span></div>
-                            <div><span class="status-indicator ${svcClass}">${svc.status || (svc.led === 2 ? 'OK' : '')}</span></div>
+                        <div class="service-item">
+                            <div>
+                                <strong>${svc.name}</strong>
+                                <span style="color: var(--text-secondary)">(${svc.type})</span>
+                            </div>
+                            <div>
+                                <span class="status-indicator ${svcClass}">
+                                    ${svc.status || (svc.led === 2 ? 'OK' : '')}
+                                </span>
+                            </div>
                         </div>
                     `;
                 });
