@@ -1,27 +1,93 @@
 #!/usr/bin/env python3
-from mmonit_hub import create_app, load_config, CONFIG_FILE
+import os
 import sys
+import argparse
+import getpass
 
-# Expose a top-level Flask app for gunicorn (uses default config path)
-app = create_app(CONFIG_FILE)
+from mmonit_hub import create_app  # expects a path string
+from config_loader import load_config
+from auth_utils import hash_password
+
+def _resolve_config_path(cli_override: str | None = None) -> str | None:
+    """
+    Resolution order:
+      1) CLI override (only when running as __main__)
+      2) Env var MMONIT_HUB_CONFIG
+      3) ~/.mmonit-hub.conf
+      4) ./mmonit-hub.conf (repo root)
+    Returns the first existing path or None.
+    """
+    if cli_override:
+        return cli_override
+
+    env_path = os.environ.get("MMONIT_HUB_CONFIG")
+    if env_path and os.path.exists(env_path):
+        return env_path
+
+    home_path = os.path.expanduser("~/.mmonit-hub.conf")
+    if os.path.exists(home_path):
+        return home_path
+
+    repo_path = os.path.join(os.path.dirname(__file__), "mmonit-hub.conf")
+    if os.path.exists(repo_path):
+        return repo_path
+
+    return None
+
+# ------------------------------------------------------------------------------------
+# Module-level app for gunicorn / `flask run`
+# (must pass a PATH to create_app, not a dict)
+# ------------------------------------------------------------------------------------
+_cfg_path_for_import = _resolve_config_path(None)
+# load_config here only to fail fast with helpful message if nothing is found
+# and to avoid silent misconfigurations during import.
+cfg_for_import = load_config(_cfg_path_for_import)  # exits with sample if not found
+app = create_app(cfg_for_import["_config_source"])
+
+# ------------------------------------------------------------------------------------
+# CLI entrypoint (only used with `python app.py ...`)
+# ------------------------------------------------------------------------------------
+def main():
+    parser = argparse.ArgumentParser(description="M/Monit Hub (Flask) Launcher")
+    parser.add_argument("--config", help="Path to configuration file (overrides env/home/repo)")
+    parser.add_argument("--hash-password", action="store_true", help="Generate password hash and exit")
+    args = parser.parse_args()
+
+    if args.hash_password:
+        pw1 = getpass.getpass("Enter password to hash: ")
+        pw2 = getpass.getpass("Confirm password: ")
+        if pw1 != pw2:
+            print("Error: Passwords do not match.")
+            sys.exit(1)
+        print("\nHashed password:")
+        print(hash_password(pw1))
+        sys.exit(0)
+
+    # If a CLI --config is provided, resolve + run with that
+    if args.config:
+        cfg = load_config(args.config)  # validate & for logging
+        port = int(cfg.get("port", 8080))
+
+        print("M/Monit Hub (Flask) starting…")
+        print(f"✅ Config: {cfg.get('_config_source', '<unknown>')}")
+        print(f"Monitoring {len(cfg.get('instances', []))} tenant(s)")
+        users = cfg.get("users", [])
+        print(f"🔐 Login: Flask-Login enabled ({len(users)} user(s))" if users else "⚠️  Login: Disabled (anonymous access)")
+        print(f"📊 Dashboard: http://localhost:{port}\n")
+
+        local_app = create_app(cfg["_config_source"])
+        local_app.run(host="0.0.0.0", port=port)
+        return
+
+    # Otherwise use the module-level config (env/home/repo)
+    port = int(cfg_for_import.get("port", 8080))
+    print("M/Monit Hub (Flask) starting…")
+    print(f"✅ Config: {cfg_for_import.get('_config_source', '<unknown>')}")
+    print(f"Monitoring {len(cfg_for_import.get('instances', []))} tenant(s)")
+    users = cfg_for_import.get("users", [])
+    print(f"🔐 Login: Flask-Login enabled ({len(users)} user(s))" if users else "⚠️  Login: Disabled (anonymous access)")
+    print(f"📊 Dashboard: http://localhost:{port}\n")
+    app.run(host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
-    cfg_path = sys.argv[1] if len(sys.argv) > 1 else CONFIG_FILE
-    cfg = load_config(cfg_path)
-    port = int(cfg.get("port", 8080))
-
-    print("M/Monit Hub (Flask) starting…")
-    print(f"Config: {cfg_path}")
-    print(f"Monitoring {len(cfg.get('instances', []))} tenant(s)")
-
-    users = cfg.get("users", [])
-    if users:
-        print(f"Login: Flask-Login enabled ({len(users)} user(s))")
-    else:
-        print("Login: Disabled (anonymous access)")
-
-    print(f"Dashboard: http://localhost:{port}")
-    print("Press Ctrl+C to stop\n")
-
-    # Run the dev server; for production use: gunicorn -w 2 -b 0.0.0.0:8082 app:app
-    app.run(host="0.0.0.0", port=port)
+    main()
