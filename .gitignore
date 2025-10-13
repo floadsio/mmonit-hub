@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+.venv/
+
+# Build / local artifacts
+*.zip
+*.log
+*.bak
+
+# System or editor files
+.DS_Store
+.idea/
+.vscode/
