@@ -1,0 +1,417 @@
+let tenantsData = [];
+
+// thresholds from server config (fallbacks if not provided)
+const DISK_WARN = Number(window.DISK_WARN_PCT ?? 80);
+const DISK_ERR  = Number(window.DISK_ERR_PCT  ?? 90);
+
+function getDiskAlert(host) {
+  if (!host.filesystems || host.filesystems.length === 0) return { alert: null, max: 0 };
+  const max = host.filesystems.reduce((m, fs) => Math.max(m, fs.usage_percent || 0), 0);
+  if (max >= DISK_ERR)  return { alert: 'error',   max };
+  if (max >= DISK_WARN) return { alert: 'warning', max };
+  return { alert: null, max };
+}
+
+// Version comparison helper
+function compareVersions(v1, v2) {
+  v1 = v1 || '0'; v2 = v2 || '0';
+  const a = v1.split('-')[0].split('.'); const b = v2.split('-')[0].split('.');
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const n1 = parseInt(a[i]) || 0, n2 = parseInt(b[i]) || 0;
+    if (n1 < n2) return -1; if (n1 > n2) return 1;
+  }
+  return 0;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('logoutBtn').addEventListener('click', () => {
+    window.location.href = '/logout';
+  });
+});
+
+function displayTimeInfo(lastFetchUnix, refreshSeconds) {
+  const lastUpdateElement = document.getElementById('last-update');
+  const intervalElement = document.getElementById('refresh-interval-display');
+  if (lastFetchUnix) {
+    const date = new Date(lastFetchUnix * 1000);
+    lastUpdateElement.textContent = 'Last Updated: ' + date.toLocaleTimeString();
+  } else {
+    lastUpdateElement.textContent = 'Last Updated: N/A';
+  }
+  intervalElement.textContent = refreshSeconds > 0 ? 'Auto-refresh: ' + refreshSeconds + 's' : 'Auto-refresh: Disabled';
+}
+
+// OS stats
+function renderOSStats(allHosts) {
+  const osCounts = allHosts.reduce((acc, h) => {
+    if (h.os_name && h.os_name !== 'OS N/A') acc[h.os_name] = (acc[h.os_name] || 0) + 1;
+    return acc;
+  }, {});
+  const sorted = Object.entries(osCounts).sort(([, A], [, B]) => B - A);
+  const container = document.getElementById('os-stats-container');
+  container.innerHTML = '';
+  if (sorted.length === 0) { container.style.display = 'none'; return; } else { container.style.display = 'grid'; }
+  sorted.slice(0, 4).forEach(([name, count]) => {
+    const card = document.createElement('div'); card.className = 'stat-card';
+    card.innerHTML = '<div class="stat-value">' + count + '</div><div class="stat-label">' + name.toUpperCase() + ' HOSTS</div>';
+    container.appendChild(card);
+  });
+}
+
+// Modal
+function showHostDetails(host, tenantUrl) {
+  const modal = document.getElementById('hostModal');
+  const modalTitle = document.getElementById('modalTitle');
+  const modalBody = document.getElementById('modalBody');
+  const statusClass = host.led === 0 ? 'error' : (host.led === 1 ? 'warning' : 'ok');
+  const statusText = host.led === 0 ? 'Error' : (host.led === 1 ? 'Warning' : 'OK');
+
+  let filesystemsHtml = '';
+  if (host.filesystems && host.filesystems.length > 0) {
+    filesystemsHtml = '<div class="detail-row"><div class="detail-label">Filesystems</div><div class="detail-value">';
+    host.filesystems.forEach(fs => {
+      const usageClass = fs.usage_percent >= DISK_ERR ? 'error'
+                       : (fs.usage_percent >= DISK_WARN ? 'warning' : 'ok');
+      filesystemsHtml += '<div style="margin-bottom:8px;"><div><strong>' + fs.name + '</strong></div>' +
+        '<div><span class="status-indicator ' + usageClass + '">' + fs.usage_percent.toFixed(1) + '%</span>' +
+        (fs.usage_mb !== null ? ' ' + (fs.usage_mb/1024).toFixed(1) + ' GB / ' + (fs.total_mb/1024).toFixed(1) + ' GB' : '') +
+        '</div></div>';
+    });
+    filesystemsHtml += '</div></div>';
+  }
+
+  let issuesDetailsHtml = '';
+  if (host.issues && host.issues.length > 0) {
+    issuesDetailsHtml = '<div class="detail-row"><div class="detail-label">Service Issues</div><div class="detail-value">';
+    host.issues.forEach(issue => {
+      const cls = issue.led === 0 ? 'error' : 'warning';
+      issuesDetailsHtml += '<div style="margin-bottom:8px;"><div><strong>' + issue.name + '</strong> (' + issue.type + ')</div>' +
+        '<div><span class="status-indicator ' + cls + '">' + issue.status + '</span></div></div>';
+    });
+    issuesDetailsHtml += '</div></div>';
+  }
+
+  // Services list
+  let servicesDetailsHtml = '';
+  if (host.services_detail && host.services_detail.length > 0) {
+    servicesDetailsHtml = '<div class="detail-row services-row"><div class="detail-label">Services</div><div class="detail-value" style="width:100%;">';
+    host.services_detail.forEach(svc => {
+      const svcClass = svc.led === 0 ? 'error' : (svc.led === 1 ? 'warning' : 'ok');
+      servicesDetailsHtml += '<div class="service-item">' +
+        '<div><strong>' + svc.name + '</strong> <span style="color:var(--text-secondary)">(' + svc.type + ')</span></div>' +
+        '<div><span class="status-indicator ' + svcClass + '">' + (svc.status || (svc.led === 2 ? 'OK' : '')) + '</span></div>' +
+        '</div>';
+    });
+    servicesDetailsHtml += '</div></div>';
+  }
+
+  modalTitle.textContent = host.hostname;
+  modalBody.innerHTML =
+    '<div class="detail-row">' +
+      '<div class="detail-label">Status</div>' +
+      '<div class="detail-value"><span class="status-indicator ' + statusClass + '">' + statusText + '</span></div>' +
+    '</div>' +
+    issuesDetailsHtml +
+    servicesDetailsHtml +
+    '<div class="detail-row"><div class="detail-label">Operating System</div>' +
+      '<div class="detail-value">' + host.os_name + ' (' + (host.os_release || 'N/A') + ')</div></div>' +
+    '<div class="detail-row"><div class="detail-label">CPU Usage</div><div class="detail-value">' + host.cpu + '%</div></div>' +
+    '<div class="detail-row"><div class="detail-label">Memory Usage</div><div class="detail-value">' + host.mem + '%</div></div>' +
+    '<div class="detail-row"><div class="detail-label">Events</div><div class="detail-value">' + host.events + '</div></div>' +
+    '<div class="detail-row"><div class="detail-label">Heartbeat</div><div class="detail-value">' + (host.heartbeat ? '✓ Active' : '✗ Inactive') + '</div></div>' +
+    '<div class="detail-row"><div class="detail-label">Host ID</div><div class="detail-value">' + host.id + '</div></div>' +
+    filesystemsHtml +
+    '<div style="margin-top:20px; text-align:center;">' +
+      '<a href="' + tenantUrl + '/admin/hosts/get?id=' + host.id + '" target="_blank" class="refresh">View in M/Monit →</a>' +
+    '</div>';
+
+  modal.classList.add('show');
+}
+
+function closeModal(){ document.getElementById('hostModal').classList.remove('show'); }
+document.getElementById('modalClose').addEventListener('click', closeModal);
+document.getElementById('hostModal').addEventListener('click', (e)=>{ if(e.target.id==='hostModal') closeModal(); });
+
+function initTheme(){
+  const saved = localStorage.getItem('theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const theme = saved || (prefersDark ? 'dark' : 'light');
+  setTheme(theme);
+}
+function setTheme(theme){
+  document.documentElement.setAttribute('data-theme', theme);
+  document.getElementById('themeIcon').textContent = theme === 'dark' ? '☀️' : '🌙';
+  localStorage.setItem('theme', theme);
+}
+document.getElementById('themeToggle').addEventListener('click', ()=>{
+  const cur = document.documentElement.getAttribute('data-theme');
+  setTheme(cur === 'dark' ? 'light' : 'dark');
+});
+
+function sortTenants(data, sortBy){
+  const sorted = [...data];
+  switch(sortBy){
+    case 'issues-first':
+      return sorted.sort((a,b)=>{
+        const ai = a.error ? 10000 : (a.hosts||[]).filter(h=>h.led!==2).length;
+        const bi = b.error ? 10000 : (b.hosts||[]).filter(h=>h.led!==2).length;
+        if (ai!==bi) return bi-ai;
+        const ah=(a.hosts||[]).length, bh=(b.hosts||[]).length; return bh-ah;
+      });
+    case 'name': return sorted.sort((a,b)=> a.tenant.localeCompare(b.tenant));
+    case 'hosts': return sorted.sort((a,b)=> (b.hosts||[]).length - (a.hosts||[]).length);
+    case 'cpu': return sorted.sort((a,b)=>{
+      const av=(a.hosts||[]).reduce((s,h)=>s+(h.cpu||0),0)/((a.hosts||[]).length||1);
+      const bv=(b.hosts||[]).reduce((s,h)=>s+(h.cpu||0),0)/((b.hosts||[]).length||1);
+      return bv-av;
+    });
+    case 'memory': return sorted.sort((a,b)=>{
+      const av=(a.hosts||[]).reduce((s,h)=>s+(h.mem||0),0)/((a.hosts||[]).length||1);
+      const bv=(b.hosts||[]).reduce((s,h)=>s+(h.mem||0),0)/((b.hosts||[]).length||1);
+      return bv-av;
+    });
+    case 'disk': return sorted.sort((a,b)=>{
+      const avg = (t)=>{
+        const arr=(t.hosts||[]).map(h=>Math.max(...(h.filesystems||[]).map(fs=>fs.usage_percent||0),0));
+        return arr.length? arr.reduce((s,x)=>s+x,0)/arr.length : 0;
+      };
+      return avg(b)-avg(a);
+    });
+    case 'os': return sorted.sort((a,b)=>{
+      const ao=(a.hosts[0]&&a.hosts[0].os_name)||'zzzzzz';
+      const bo=(b.hosts[0]&&b.hosts[0].os_name)||'zzzzzz';
+      return ao.localeCompare(bo);
+    });
+    case 'os-version': return sorted.sort((a,b)=>{
+      const av=(a.hosts||[]).map(h=>h.os_release||'0').sort(compareVersions)[0];
+      const bv=(b.hosts||[]).map(h=>h.os_release||'0').sort(compareVersions)[0];
+      return compareVersions(av,bv);
+    });
+    case 'os-update-needed': return sorted.sort((a,b)=>{
+      const an=(a.hosts||[]).some(h=>!h.os_release);
+      const bn=(b.hosts||[]).some(h=>!h.os_release);
+      if (an && !bn) return -1; if (!an && bn) return 1;
+      const ai=a.error?1000:(a.hosts||[]).filter(h=>h.led!==2).length;
+      const bi=b.error?1000:(b.hosts||[]).filter(h=>h.led!==2).length;
+      return bi-ai;
+    });
+    default: return sorted;
+  }
+}
+
+function renderOSStatsAndCards(processedTenants){
+  const allHosts = processedTenants.flatMap(t=>t.hosts||[]);
+  renderOSStats(allHosts);
+
+  let totalHosts=0,totalIssues=0,totalServices=0;
+  processedTenants.forEach(t=>{
+    const hosts=t.hosts||[];
+    totalHosts+=hosts.length;
+    totalIssues+=hosts.filter(h=>h.led!==2 || getDiskAlert(h).alert).length;
+    totalServices+=hosts.reduce((s,h)=>s+(h.service_count||0),0);
+  });
+
+  const issuesCard = document.getElementById('issues-card'); issuesCard.className='stat-card';
+  if (totalIssues>0){
+    const hasError = processedTenants.flatMap(t=>t.hosts||[]).some(h=>{
+      const d=getDiskAlert(h);
+      return (h.issues||[]).some(i=>i.led===0) || d.alert==='error';
+    });
+    issuesCard.classList.add(hasError?'issue-card-error':'issue-card-warn');
+  } else { issuesCard.classList.add('issue-card-ok'); }
+
+  document.getElementById('total-tenants').textContent = processedTenants.length;
+  document.getElementById('total-hosts').textContent = totalHosts;
+  document.getElementById('total-services').textContent = totalServices;
+  document.getElementById('issues').textContent = totalIssues;
+}
+
+function renderTenants(data){
+  const processedTenants = data.tenants;
+  const container = document.getElementById('tenants'); container.innerHTML='';
+
+  renderOSStatsAndCards(processedTenants);
+
+  processedTenants.forEach(tenant=>{
+    const div=document.createElement('div'); div.className='tenant';
+    if (tenant.error){
+      div.classList.add('error');
+      div.innerHTML = '<div class="tenant-header">' +
+          '<div><div class="tenant-name">' + tenant.tenant + '</div><div class="tenant-url">' + tenant.url + '</div></div>' +
+          '<span class="status-badge badge-error">ERROR</span></div>' +
+          '<div class="error-msg">⚠️ ' + tenant.error + '</div>';
+    } else {
+      const hosts = tenant.hosts||[];
+      const issues = hosts.filter(h=>h.led!==2 || getDiskAlert(h).alert).length;
+      div.classList.add(issues>0?'issues':'ok');
+
+      let hostsHtml = '<div class="hosts">';
+      hosts.forEach(host=>{
+        const isDown = host.led!==2;
+        const disk = getDiskAlert(host);
+        const cardSeverityClass = isDown ? 'error' : (disk.alert ? 'warn' : '');
+        const icon = host.led===0?'🔴':(host.led===1?'🟡':'🟢');
+        const text = host.led===0?'Error':(host.led===1?'Warning':'Running');
+        const diskInfo = disk.max>0 ? ' | Disk: ' + disk.max.toFixed(1) + '%' : '';
+
+        let issuesHtml='';
+        if (host.issues && host.issues.length>0){
+          const errs=host.issues.filter(i=>i.led===0), warns=host.issues.filter(i=>i.led===1);
+          if (errs.length>0) issuesHtml = '<div class="host-issues">⚠️ ' + errs.map(i=>i.name).join(', ') + '</div>';
+          else if (warns.length>0) issuesHtml = '<div class="host-issues warning">⚠️ ' + warns.map(i=>i.name).join(', ') + '</div>';
+        } else if (disk.alert){
+          const cls = disk.alert==='error' ? '' : ' warning';
+          issuesHtml = '<div class="host-issues' + cls + '">⚠️ Disk usage ' + disk.max.toFixed(1) + '%</div>';
+        }
+
+        const os_name = host.os_name || 'OS N/A';
+        const os_release = host.os_release || '';
+        const hostName = host.hostname || 'Unknown';
+        const filterText = document.getElementById('hostFilter').value.toLowerCase();
+        const serviceText = (host.service_names||[]).join(' ');
+        const searchable = (hostName + ' ' + os_name + ' ' + os_release + ' ' + serviceText).toLowerCase();
+        const hidden = filterText && !searchable.includes(filterText) ? 'hidden' : '';
+
+        hostsHtml += '<div class="host ' + cardSeverityClass + ' ' + hidden +
+            '" onclick=\'showHostDetails(' + JSON.stringify(host) + ', "' + tenant.url + '")\'>' +
+            '<div class="host-name">' + hostName + '</div>' +
+            '<div class="host-status ' + (isDown?'down':'') + '"><span>' + icon + ' ' + text + '</span><span class="os-info">' + os_name + (os_release?(' '+os_release):'') + '</span></div>' +
+            '<div class="host-details">CPU: ' + host.cpu + '% | Mem: ' + host.mem + '%' + diskInfo + '</div>' +
+            issuesHtml +
+          '</div>';
+      });
+      hostsHtml+='</div>';
+
+      div.innerHTML = '<div class="tenant-header">' +
+          '<div><div class="tenant-name" onclick="window.open(\'' + tenant.url + '\', \'_blank\')">' + tenant.tenant + '</div>' +
+          '<div class="tenant-url">' + tenant.url + '</div></div>' +
+          '<span class="status-badge ' + (issues>0?'badge-warning':'badge-ok') + '">' + hosts.length + ' hosts • ' + issues + ' issues</span>' +
+        '</div>' + hostsHtml;
+    }
+    container.appendChild(div);
+  });
+
+  displayTimeInfo(data.last_fetch_time, data.refresh_interval);
+  tenantsData = processedTenants;
+  const currentSort = document.getElementById('sortSelect').value;
+  const sorted = sortTenants(processedTenants, currentSort);
+  renderTenantsOnly(sorted);
+}
+
+function renderTenantsOnly(data){
+  const container=document.getElementById('tenants'); container.innerHTML='';
+  let totalHosts=0,totalIssues=0,totalServices=0;
+  const allHosts = data.flatMap(t=>t.hosts||[]);
+  renderOSStats(allHosts);
+  const filterText = document.getElementById('hostFilter').value.toLowerCase();
+  const selectedSort = document.getElementById('sortSelect').value;
+
+  data.forEach(tenant=>{
+    const div=document.createElement('div'); div.className='tenant';
+    if (tenant.error){
+      div.classList.add('error');
+      div.innerHTML = '<div class="tenant-header"><div><div class="tenant-name">' + tenant.tenant + '</div>' +
+        '<div class="tenant-url">' + tenant.url + '</div></div><span class="status-badge badge-error">ERROR</span></div>' +
+        '<div class="error-msg">⚠️ ' + tenant.error + '</div>';
+    } else {
+      const hosts=tenant.hosts||[];
+      const issues = hosts.filter(h=>h.led!==2 || getDiskAlert(h).alert).length;
+      totalHosts+=hosts.length; totalIssues+=issues; totalServices+=hosts.reduce((s,h)=>s+(h.service_count||0),0);
+      div.classList.add(issues>0?'issues':'ok');
+      let hostsHtml='<div class="hosts">';
+      hosts.forEach(host=>{
+        const isDown=host.led!==2;
+        const disk = getDiskAlert(host);
+        const cardSeverityClass = isDown ? 'error' : (disk.alert ? 'warn' : '');
+        const icon=host.led===0?'🔴':(host.led===1?'🟡':'🟢');
+        const text=host.led===0?'Error':(host.led===1?'Warning':'Running');
+        const diskInfo = disk.max>0 ? ' | Disk: ' + disk.max.toFixed(1) + '%' : '';
+
+        let issuesHtml='';
+        if (host.issues && host.issues.length>0){
+          const errs=host.issues.filter(i=>i.led===0), warns=host.issues.filter(i=>i.led===1);
+          if (errs.length>0) issuesHtml = '<div class="host-issues">⚠️ ' + errs.map(i=>i.name).join(', ') + '</div>';
+          else if (warns.length>0) issuesHtml = '<div class="host-issues warning">⚠️ ' + warns.map(i=>i.name).join(', ') + '</div>';
+        } else if (disk.alert){
+          const cls = disk.alert==='error' ? '' : ' warning';
+          issuesHtml = '<div class="host-issues' + cls + '">⚠️ Disk usage ' + disk.max.toFixed(1) + '%</div>';
+        }
+
+        const os_name=(host.os_name && host.os_name!=='OS N/A')?host.os_name:'OS N/A';
+        const os_release=host.os_release||'';
+        const hostName=host.hostname||'Unknown';
+
+        const serviceText=(host.service_names||[]).join(' ');
+        let searchable = (hostName + ' ' + os_name + ' ' + os_release + ' ' + serviceText).toLowerCase();
+        let hidden = filterText && !searchable.includes(filterText) ? 'hidden' : '';
+        if (selectedSort==='os-update-needed' && !hidden){
+          hidden = host.os_release ? 'hidden' : '';
+        }
+
+        hostsHtml += '<div class="host ' + cardSeverityClass + ' ' + hidden +
+          '" onclick=\'showHostDetails(' + JSON.stringify(host) + ', "' + tenant.url + '")\'>' +
+          '<div class="host-name">' + hostName + '</div>' +
+          '<div class="host-status ' + (isDown?'down':'') + '"><span>' + icon + ' ' + text + '</span><span class="os-info">' + os_name + (os_release?(' '+os_release):'') + '</span></div>' +
+          '<div class="host-details">CPU: ' + host.cpu + '% | Mem: ' + host.mem + '%' + diskInfo + '</div>' +
+          issuesHtml +
+        '</div>';
+      });
+      hostsHtml += '</div>';
+      div.innerHTML = '<div class="tenant-header">' +
+          '<div><div class="tenant-name" onclick="window.open(\'' + tenant.url + '\', \'_blank\')">' + tenant.tenant + '</div><div class="tenant-url">' + tenant.url + '</div></div>' +
+          '<span class="status-badge ' + (issues>0?'badge-warning':'badge-ok') + '">' + hosts.length + ' hosts • ' + issues + ' issues</span>' +
+        '</div>' + hostsHtml;
+    }
+    container.appendChild(div);
+  });
+
+  const issuesCard = document.getElementById('issues-card'); issuesCard.className='stat-card';
+  if (totalIssues>0){
+    const hasError = allHosts.some(h=>{
+      const d=getDiskAlert(h);
+      return (h.issues||[]).some(i=>i.led===0) || d.alert==='error';
+    });
+    issuesCard.classList.add(hasError?'issue-card-error':'issue-card-warn');
+  } else { issuesCard.classList.add('issue-card-ok'); }
+
+  document.getElementById('total-hosts').textContent = totalHosts;
+  document.getElementById('total-services').textContent = totalServices;
+  document.getElementById('issues').textContent = totalIssues;
+}
+
+// Events
+document.getElementById('sortSelect').addEventListener('change', (e)=>{
+  const sorted = sortTenants(tenantsData, e.target.value);
+  renderTenantsOnly(sorted);
+});
+document.getElementById('hostFilter').addEventListener('input', ()=>{
+  const sorted = sortTenants(tenantsData, document.getElementById('sortSelect').value);
+  renderTenantsOnly(sorted);
+});
+
+// Theme init
+initTheme();
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e)=>{
+  if (!localStorage.getItem('theme')) setTheme(e.matches ? 'dark':'light');
+});
+
+// Initial fetch & auto-refresh
+function fetchDataAndRender(){
+  fetch('/api/data').then(r=>r.json()).then(data=>{
+    renderTenants(data);
+  }).catch(err=>{
+    document.getElementById('tenants').innerHTML = '<div class="tenant error"><div class="error-msg">Failed to load data: '+err+'</div></div>';
+  });
+}
+fetchDataAndRender();
+
+if (window.AUTO_REFRESH_SECONDS > 0){
+  setInterval(()=>{
+    fetch('/api/data').then(r=>r.json()).then(data=>{
+      displayTimeInfo(data.last_fetch_time, data.refresh_interval);
+      tenantsData = data.tenants;
+      const sorted = sortTenants(tenantsData, document.getElementById('sortSelect').value);
+      renderTenantsOnly(sorted);
+    }).catch(err=>console.error('Auto-refresh failed:', err));
+  }, window.AUTO_REFRESH_SECONDS * 1000);
+}

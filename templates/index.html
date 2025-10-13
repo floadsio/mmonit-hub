@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>M/Monit Hub</title>
+  <link rel="icon" href="{{ url_for('static', filename='icons/favicon.ico') }}" type="image/x-icon">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="icon" href="{{ url_for('static', filename='icons/favicon.ico') }}" type="image/x-icon">
+  <link rel="apple-touch-icon" sizes="512x512" href="{{ url_for('static', filename='icons/favicon-512.png') }}">
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+  <meta name="theme-color" content="#0f172a">
+  <script>
+    window.AUTO_REFRESH_SECONDS = {{ auto_refresh_seconds|int }};
+    window.INIT_USERNAME = {{ username|tojson }};
+    window.DISK_WARN_PCT = {{ thresholds.disk_warning_pct|default(80, true)|int }};
+    window.DISK_ERR_PCT  = {{ thresholds.disk_error_pct|default(90, true)|int }};
+  </script>
+</head>
+<body>
+  <div class="header">
+    <div class="header-content">
+      <h1>🖥️ M/Monit Hub</h1>
+      <div class="subtitle">Multi-tenant monitoring dashboard</div>
+    </div>
+    <div class="controls">
+      <div class="user-logout-group">
+        <span class="user-info">👤 {{ username }}</span>
+        <button class="logout-btn" id="logoutBtn">Logout / Change User</button>
+      </div>
+      <input type="text" id="hostFilter" placeholder="Filter hosts, OS, versions, services…" class="filter-input">
+      <select class="sort-dropdown" id="sortSelect">
+        <option value="issues-first">Issues First</option>
+        <option value="name">Sort by Name</option>
+        <option value="hosts">Sort by Host Count</option>
+        <option value="cpu">Sort by CPU Usage</option>
+        <option value="memory">Sort by Memory Usage</option>
+        <option value="disk">Sort by Disk Usage</option>
+        <option value="os">Sort by OS</option>
+        <option value="os-version">Sort by OS Version</option>
+        <option value="os-update-needed">Needs OS Review</option>
+      </select>
+      <button class="theme-toggle" id="themeToggle"><span id="themeIcon">🌙</span></button>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat-card">
+      <div class="stat-value" id="total-tenants">-</div>
+      <div class="stat-label">Total Tenants</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="total-hosts">-</div>
+      <div class="stat-label">Total Hosts</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="total-services">-</div>
+      <div class="stat-label">Total Services</div>
+    </div>
+    <div class="stat-card" id="issues-card">
+      <div class="stat-value" id="issues">-</div>
+      <div class="stat-label">Issues Detected</div>
+    </div>
+  </div>
+
+  <div class="stats" id="os-stats-container"></div>
+
+  <div class="refresh-info">
+    <span id="last-update">Last Updated: N/A</span>
+    <span id="refresh-interval-display"></span>
+  </div>
+
+  <div id="tenants"></div>
+
+  <div id="hostModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title" id="modalTitle"></div>
+        <button class="modal-close" id="modalClose">&times;</button>
+      </div>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>M/Monit Hub — Login</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    .login-card{
+      max-width:420px;margin:10vh auto;background:var(--bg-secondary);border:1px solid var(--border-color);
+      border-radius:12px;padding:24px;
+    }
+    .login-title{font-size:22px;font-weight:700;margin-bottom:12px}
+    .login-sub{color:var(--text-secondary);margin-bottom:16px}
+    .login-input{width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border-color);
+      background:var(--bg-tertiary);color:var(--text-primary);margin-bottom:12px}
+    .login-btn{
+      width:100%;padding:10px 14px;border-radius:8px;border:1px solid #3b82f6;background:#3b82f6;color:#fff;
+      font-weight:600;cursor:pointer
+    }
+    .login-btn:hover{background:#1e3a8a}
+    .login-err{color:#ef4444;margin-bottom:12px}
+    .remember{display:flex;align-items:center;gap:8px;color:var(--text-secondary);margin-bottom:12px}
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <div class="login-title">🖥️ M/Monit Hub</div>
+    <div class="login-sub">Please sign in</div>
+    {% if err %}<div class="login-err">⚠️ {{ err }}</div>{% endif %}
+    <form method="post" action="{{ url_for('login') }}">
+      <input class="login-input" type="text" name="username" placeholder="Username" autofocus required>
+      <input class="login-input" type="password" name="password" placeholder="Password" required>
+      <label class="remember"><input type="checkbox" name="remember"> Remember me</label>
+      <button class="login-btn" type="submit">Sign in</button>
+    </form>
+  </div>
+</body>
+</html>
