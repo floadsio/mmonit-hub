@@ -57,16 +57,7 @@ reset: clean venv
 
 ## Show which configuration file is active
 show-config:
-	@$(VENVPY) - <<'PY'
-import sys
-try:
-    import config_loader
-    cfg = config_loader.load_config()
-    print("Using config from:", cfg.get('_config_source', '<unknown>'))
-except Exception as e:
-    print("Could not load config via venv python:", e, file=sys.stderr)
-    sys.exit(1)
-PY
+	@$(VENVPY) -c "import config_loader; cfg=config_loader.load_config(); print('Using config from:', cfg.get('_config_source','<unknown>'))"
 
 ## Help
 help:
