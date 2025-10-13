@@ -3,7 +3,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>MMonit Hub</title>
+    <title>M/Monit Hub</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
@@ -440,7 +440,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
 <body>
     <div class="header">
         <div class="header-content">
-            <h1>🖥️ MMonit Hub</h1>
+            <h1>🖥️ M/Monit Hub</h1>
             <div class="subtitle">Multi-tenant monitoring dashboard</div>
         </div>
         <div class="controls">
@@ -1176,7 +1176,7 @@ class MMonitHandler(BaseHTTPRequestHandler):
     def do_AUTH_response(self):
         """Sends a 401 response prompting for Basic Auth"""
         self.send_response(HTTPStatus.UNAUTHORIZED)
-        self.send_header('WWW-Authenticate', 'Basic realm="MMonit Hub"')
+        self.send_header('WWW-Authenticate', 'Basic realm="M/Monit Hub"')
         self.send_header('Content-type', 'text/html')
         self.end_headers()
         self.wfile.write(b'<h1>Authentication Required</h1>')
@@ -1314,7 +1314,7 @@ def main():
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     
     server = HTTPServer(('', port), MMonitHandler)
-    print(f'MMonit Hub starting...')
+    print(f'M/Monit Hub starting...')
     print(f'Config: {config_path}')
     print(f'Monitoring {len(config["instances"])} tenant(s)')
     if 'users' in config and config['users']:

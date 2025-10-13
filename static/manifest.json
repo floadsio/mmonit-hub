@@ -1,6 +1,6 @@
 {
   "name": "M/Monit Hub",
-  "short_name": "MMonit Hub",
+  "short_name": "M/Monit Hub",
   "description": "Multi-tenant monitoring dashboard for M/Monit",
   "start_url": "/",
   "display": "standalone",
