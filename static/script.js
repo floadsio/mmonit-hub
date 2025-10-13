@@ -1,8 +1,79 @@
+/* static/script.js — full file with robust auto/light/dark theme mode */
+
 let tenantsData = [];
 
-// thresholds from server config (fallbacks if not provided)
+/* ----------------------- Config from server / defaults ----------------------- */
 const DISK_WARN = Number(window.DISK_WARN_PCT ?? 80);
 const DISK_ERR  = Number(window.DISK_ERR_PCT  ?? 90);
+
+/* ---------------------------------- THEME ---------------------------------- */
+/* 3-state theme mode:
+   - 'auto'  : follow OS, live updates on system change
+   - 'light' : force light
+   - 'dark'  : force dark
+*/
+const THEME_MODE_KEY = 'theme_mode';
+
+function getSystemPrefersDark() {
+  try { return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches; }
+  catch { return false; }
+}
+
+function iconForMode(mode) {
+  return mode === 'auto' ? '🌓' : mode === 'light' ? '☀️' : '🌙';
+}
+
+function applyThemeFromMode(mode, persist=true) {
+  let theme = 'light';
+  if (mode === 'auto') {
+    theme = getSystemPrefersDark() ? 'dark' : 'light';
+  } else {
+    theme = mode; // 'light' or 'dark'
+  }
+  document.documentElement.setAttribute('data-theme', theme);
+  document.documentElement.style.colorScheme = theme;
+
+  const iconEl = document.getElementById('themeIcon');
+  if (iconEl) iconEl.textContent = iconForMode(mode);
+
+  if (persist) {
+    try { localStorage.setItem(THEME_MODE_KEY, mode); } catch(e) {}
+  }
+}
+
+function initTheme() {
+  // pick mode
+  let mode = 'auto';
+  try {
+    const saved = localStorage.getItem(THEME_MODE_KEY);
+    if (saved === 'auto' || saved === 'light' || saved === 'dark') mode = saved;
+  } catch(e) {}
+
+  applyThemeFromMode(mode, false);
+
+  // live OS updates when in 'auto'
+  const mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+  if (mq) {
+    const handler = () => {
+      const current = (localStorage.getItem(THEME_MODE_KEY) || 'auto');
+      if (current === 'auto') applyThemeFromMode('auto', false);
+    };
+    try { mq.addEventListener('change', handler); }
+    catch { mq.addListener(handler); } // Safari fallback
+  }
+
+  // toggle cycles through modes
+  const toggle = document.getElementById('themeToggle');
+  if (toggle) {
+    toggle.addEventListener('click', () => {
+      const current = (localStorage.getItem(THEME_MODE_KEY) || 'auto');
+      const next = current === 'auto' ? 'light' : current === 'light' ? 'dark' : 'auto';
+      applyThemeFromMode(next, true);
+    });
+  }
+}
+
+/* ------------------------------ UTIL FUNCTIONS ------------------------------ */
 
 function getDiskAlert(host) {
   if (!host.filesystems || host.filesystems.length === 0) return { alert: null, max: 0 };
@@ -15,19 +86,15 @@ function getDiskAlert(host) {
 // Version comparison helper
 function compareVersions(v1, v2) {
   v1 = v1 || '0'; v2 = v2 || '0';
-  const a = v1.split('-')[0].split('.'); const b = v2.split('-')[0].split('.');
+  const a = v1.split('-')[0].split('.');
+  const b = v2.split('-')[0].split('.');
   for (let i = 0; i < Math.max(a.length, b.length); i++) {
     const n1 = parseInt(a[i]) || 0, n2 = parseInt(b[i]) || 0;
-    if (n1 < n2) return -1; if (n1 > n2) return 1;
+    if (n1 < n2) return -1;
+    if (n1 > n2) return 1;
   }
   return 0;
 }
-
-document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('logoutBtn').addEventListener('click', () => {
-    window.location.href = '/logout';
-  });
-});
 
 function displayTimeInfo(lastFetchUnix, refreshSeconds) {
   const lastUpdateElement = document.getElementById('last-update');
@@ -38,10 +105,13 @@ function displayTimeInfo(lastFetchUnix, refreshSeconds) {
   } else {
     lastUpdateElement.textContent = 'Last Updated: N/A';
   }
-  intervalElement.textContent = refreshSeconds > 0 ? 'Auto-refresh: ' + refreshSeconds + 's' : 'Auto-refresh: Disabled';
+  intervalElement.textContent = refreshSeconds > 0
+    ? 'Auto-refresh: ' + refreshSeconds + 's'
+    : 'Auto-refresh: Disabled';
 }
 
-// OS stats
+/* -------------------------------- OS STATS -------------------------------- */
+
 function renderOSStats(allHosts) {
   const osCounts = allHosts.reduce((acc, h) => {
     if (h.os_name && h.os_name !== 'OS N/A') acc[h.os_name] = (acc[h.os_name] || 0) + 1;
@@ -50,21 +120,28 @@ function renderOSStats(allHosts) {
   const sorted = Object.entries(osCounts).sort(([, A], [, B]) => B - A);
   const container = document.getElementById('os-stats-container');
   container.innerHTML = '';
-  if (sorted.length === 0) { container.style.display = 'none'; return; } else { container.style.display = 'grid'; }
+  if (sorted.length === 0) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = 'grid';
   sorted.slice(0, 4).forEach(([name, count]) => {
-    const card = document.createElement('div'); card.className = 'stat-card';
+    const card = document.createElement('div');
+    card.className = 'stat-card';
     card.innerHTML = '<div class="stat-value">' + count + '</div><div class="stat-label">' + name.toUpperCase() + ' HOSTS</div>';
     container.appendChild(card);
   });
 }
 
-// Modal
+/* --------------------------------- MODAL ---------------------------------- */
+
 function showHostDetails(host, tenantUrl) {
   const modal = document.getElementById('hostModal');
   const modalTitle = document.getElementById('modalTitle');
   const modalBody = document.getElementById('modalBody');
+
   const statusClass = host.led === 0 ? 'error' : (host.led === 1 ? 'warning' : 'ok');
-  const statusText = host.led === 0 ? 'Error' : (host.led === 1 ? 'Warning' : 'OK');
+  const statusText  = host.led === 0 ? 'Error' : (host.led === 1 ? 'Warning' : 'OK');
 
   let filesystemsHtml = '';
   if (host.filesystems && host.filesystems.length > 0) {
@@ -128,25 +205,12 @@ function showHostDetails(host, tenantUrl) {
   modal.classList.add('show');
 }
 
-function closeModal(){ document.getElementById('hostModal').classList.remove('show'); }
-document.getElementById('modalClose').addEventListener('click', closeModal);
-document.getElementById('hostModal').addEventListener('click', (e)=>{ if(e.target.id==='hostModal') closeModal(); });
+function closeModal(){
+  const m = document.getElementById('hostModal');
+  if (m) m.classList.remove('show');
+}
 
-function initTheme(){
-  const saved = localStorage.getItem('theme');
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const theme = saved || (prefersDark ? 'dark' : 'light');
-  setTheme(theme);
-}
-function setTheme(theme){
-  document.documentElement.setAttribute('data-theme', theme);
-  document.getElementById('themeIcon').textContent = theme === 'dark' ? '☀️' : '🌙';
-  localStorage.setItem('theme', theme);
-}
-document.getElementById('themeToggle').addEventListener('click', ()=>{
-  const cur = document.documentElement.getAttribute('data-theme');
-  setTheme(cur === 'dark' ? 'light' : 'dark');
-});
+/* ------------------------------ RENDERING ------------------------------ */
 
 function sortTenants(data, sortBy){
   const sorted = [...data];
@@ -156,46 +220,57 @@ function sortTenants(data, sortBy){
         const ai = a.error ? 10000 : (a.hosts||[]).filter(h=>h.led!==2).length;
         const bi = b.error ? 10000 : (b.hosts||[]).filter(h=>h.led!==2).length;
         if (ai!==bi) return bi-ai;
-        const ah=(a.hosts||[]).length, bh=(b.hosts||[]).length; return bh-ah;
+        const ah=(a.hosts||[]).length, bh=(b.hosts||[]).length;
+        return bh-ah;
       });
-    case 'name': return sorted.sort((a,b)=> a.tenant.localeCompare(b.tenant));
-    case 'hosts': return sorted.sort((a,b)=> (b.hosts||[]).length - (a.hosts||[]).length);
-    case 'cpu': return sorted.sort((a,b)=>{
-      const av=(a.hosts||[]).reduce((s,h)=>s+(h.cpu||0),0)/((a.hosts||[]).length||1);
-      const bv=(b.hosts||[]).reduce((s,h)=>s+(h.cpu||0),0)/((b.hosts||[]).length||1);
-      return bv-av;
-    });
-    case 'memory': return sorted.sort((a,b)=>{
-      const av=(a.hosts||[]).reduce((s,h)=>s+(h.mem||0),0)/((a.hosts||[]).length||1);
-      const bv=(b.hosts||[]).reduce((s,h)=>s+(h.mem||0),0)/((b.hosts||[]).length||1);
-      return bv-av;
-    });
-    case 'disk': return sorted.sort((a,b)=>{
-      const avg = (t)=>{
-        const arr=(t.hosts||[]).map(h=>Math.max(...(h.filesystems||[]).map(fs=>fs.usage_percent||0),0));
-        return arr.length? arr.reduce((s,x)=>s+x,0)/arr.length : 0;
-      };
-      return avg(b)-avg(a);
-    });
-    case 'os': return sorted.sort((a,b)=>{
-      const ao=(a.hosts[0]&&a.hosts[0].os_name)||'zzzzzz';
-      const bo=(b.hosts[0]&&b.hosts[0].os_name)||'zzzzzz';
-      return ao.localeCompare(bo);
-    });
-    case 'os-version': return sorted.sort((a,b)=>{
-      const av=(a.hosts||[]).map(h=>h.os_release||'0').sort(compareVersions)[0];
-      const bv=(b.hosts||[]).map(h=>h.os_release||'0').sort(compareVersions)[0];
-      return compareVersions(av,bv);
-    });
-    case 'os-update-needed': return sorted.sort((a,b)=>{
-      const an=(a.hosts||[]).some(h=>!h.os_release);
-      const bn=(b.hosts||[]).some(h=>!h.os_release);
-      if (an && !bn) return -1; if (!an && bn) return 1;
-      const ai=a.error?1000:(a.hosts||[]).filter(h=>h.led!==2).length;
-      const bi=b.error?1000:(b.hosts||[]).filter(h=>h.led!==2).length;
-      return bi-ai;
-    });
-    default: return sorted;
+    case 'name':
+      return sorted.sort((a,b)=> a.tenant.localeCompare(b.tenant));
+    case 'hosts':
+      return sorted.sort((a,b)=> (b.hosts||[]).length - (a.hosts||[]).length);
+    case 'cpu':
+      return sorted.sort((a,b)=>{
+        const av=(a.hosts||[]).reduce((s,h)=>s+(h.cpu||0),0)/((a.hosts||[]).length||1);
+        const bv=(b.hosts||[]).reduce((s,h)=>s+(h.cpu||0),0)/((b.hosts||[]).length||1);
+        return bv-av;
+      });
+    case 'memory':
+      return sorted.sort((a,b)=>{
+        const av=(a.hosts||[]).reduce((s,h)=>s+(h.mem||0),0)/((a.hosts||[]).length||1);
+        const bv=(b.hosts||[]).reduce((s,h)=>s+(h.mem||0),0)/((b.hosts||[]).length||1);
+        return bv-av;
+      });
+    case 'disk':
+      return sorted.sort((a,b)=>{
+        const avg = (t)=>{
+          const arr=(t.hosts||[]).map(h=>Math.max(...(h.filesystems||[]).map(fs=>fs.usage_percent||0),0));
+          return arr.length? arr.reduce((s,x)=>s+x,0)/arr.length : 0;
+        };
+        return avg(b)-avg(a);
+      });
+    case 'os':
+      return sorted.sort((a,b)=>{
+        const ao=(a.hosts[0]&&a.hosts[0].os_name)||'zzzzzz';
+        const bo=(b.hosts[0]&&b.hosts[0].os_name)||'zzzzzz';
+        return ao.localeCompare(bo);
+      });
+    case 'os-version':
+      return sorted.sort((a,b)=>{
+        const av=(a.hosts||[]).map(h=>h.os_release||'0').sort(compareVersions)[0];
+        const bv=(b.hosts||[]).map(h=>h.os_release||'0').sort(compareVersions)[0];
+        return compareVersions(av,bv);
+      });
+    case 'os-update-needed':
+      return sorted.sort((a,b)=>{
+        const an=(a.hosts||[]).some(h=>!h.os_release);
+        const bn=(b.hosts||[]).some(h=>!h.os_release);
+        if (an && !bn) return -1;
+        if (!an && bn) return 1;
+        const ai=a.error?1000:(a.hosts||[]).filter(h=>h.led!==2).length;
+        const bi=b.error?1000:(b.hosts||[]).filter(h=>h.led!==2).length;
+        return bi-ai;
+      });
+    default:
+      return sorted;
   }
 }
 
@@ -211,24 +286,28 @@ function renderOSStatsAndCards(processedTenants){
     totalServices+=hosts.reduce((s,h)=>s+(h.service_count||0),0);
   });
 
-  const issuesCard = document.getElementById('issues-card'); issuesCard.className='stat-card';
+  const issuesCard = document.getElementById('issues-card');
+  issuesCard.className='stat-card';
   if (totalIssues>0){
     const hasError = processedTenants.flatMap(t=>t.hosts||[]).some(h=>{
       const d=getDiskAlert(h);
       return (h.issues||[]).some(i=>i.led===0) || d.alert==='error';
     });
     issuesCard.classList.add(hasError?'issue-card-error':'issue-card-warn');
-  } else { issuesCard.classList.add('issue-card-ok'); }
+  } else {
+    issuesCard.classList.add('issue-card-ok');
+  }
 
   document.getElementById('total-tenants').textContent = processedTenants.length;
-  document.getElementById('total-hosts').textContent = totalHosts;
-  document.getElementById('total-services').textContent = totalServices;
-  document.getElementById('issues').textContent = totalIssues;
+  document.getElementById('total-hosts').textContent   = totalHosts;
+  document.getElementById('total-services').textContent= totalServices;
+  document.getElementById('issues').textContent        = totalIssues;
 }
 
 function renderTenants(data){
   const processedTenants = data.tenants;
-  const container = document.getElementById('tenants'); container.innerHTML='';
+  const container = document.getElementById('tenants');
+  container.innerHTML='';
 
   renderOSStatsAndCards(processedTenants);
 
@@ -236,7 +315,8 @@ function renderTenants(data){
     const div=document.createElement('div'); div.className='tenant';
     if (tenant.error){
       div.classList.add('error');
-      div.innerHTML = '<div class="tenant-header">' +
+      div.innerHTML =
+        '<div class="tenant-header">' +
           '<div><div class="tenant-name">' + tenant.tenant + '</div><div class="tenant-url">' + tenant.url + '</div></div>' +
           '<span class="status-badge badge-error">ERROR</span></div>' +
           '<div class="error-msg">⚠️ ' + tenant.error + '</div>';
@@ -273,16 +353,17 @@ function renderTenants(data){
         const hidden = filterText && !searchable.includes(filterText) ? 'hidden' : '';
 
         hostsHtml += '<div class="host ' + cardSeverityClass + ' ' + hidden +
-            '" onclick=\'showHostDetails(' + JSON.stringify(host) + ', "' + tenant.url + '")\'>' +
-            '<div class="host-name">' + hostName + '</div>' +
-            '<div class="host-status ' + (isDown?'down':'') + '"><span>' + icon + ' ' + text + '</span><span class="os-info">' + os_name + (os_release?(' '+os_release):'') + '</span></div>' +
-            '<div class="host-details">CPU: ' + host.cpu + '% | Mem: ' + host.mem + '%' + diskInfo + '</div>' +
-            issuesHtml +
+          '" onclick=\'showHostDetails(' + JSON.stringify(host) + ', "' + tenant.url + '")\'>' +
+          '<div class="host-name">' + hostName + '</div>' +
+          '<div class="host-status ' + (isDown?'down':'') + '"><span>' + icon + ' ' + text + '</span><span class="os-info">' + os_name + (os_release?(' '+os_release):'') + '</span></div>' +
+          '<div class="host-details">CPU: ' + host.cpu + '% | Mem: ' + host.mem + '%' + diskInfo + '</div>' +
+          issuesHtml +
           '</div>';
       });
       hostsHtml+='</div>';
 
-      div.innerHTML = '<div class="tenant-header">' +
+      div.innerHTML =
+        '<div class="tenant-header">' +
           '<div><div class="tenant-name" onclick="window.open(\'' + tenant.url + '\', \'_blank\')">' + tenant.tenant + '</div>' +
           '<div class="tenant-url">' + tenant.url + '</div></div>' +
           '<span class="status-badge ' + (issues>0?'badge-warning':'badge-ok') + '">' + hosts.length + ' hosts • ' + issues + ' issues</span>' +
@@ -310,7 +391,8 @@ function renderTenantsOnly(data){
     const div=document.createElement('div'); div.className='tenant';
     if (tenant.error){
       div.classList.add('error');
-      div.innerHTML = '<div class="tenant-header"><div><div class="tenant-name">' + tenant.tenant + '</div>' +
+      div.innerHTML =
+        '<div class="tenant-header"><div><div class="tenant-name">' + tenant.tenant + '</div>' +
         '<div class="tenant-url">' + tenant.url + '</div></div><span class="status-badge badge-error">ERROR</span></div>' +
         '<div class="error-msg">⚠️ ' + tenant.error + '</div>';
     } else {
@@ -318,6 +400,7 @@ function renderTenantsOnly(data){
       const issues = hosts.filter(h=>h.led!==2 || getDiskAlert(h).alert).length;
       totalHosts+=hosts.length; totalIssues+=issues; totalServices+=hosts.reduce((s,h)=>s+(h.service_count||0),0);
       div.classList.add(issues>0?'issues':'ok');
+
       let hostsHtml='<div class="hosts">';
       hosts.forEach(host=>{
         const isDown=host.led!==2;
@@ -357,7 +440,9 @@ function renderTenantsOnly(data){
         '</div>';
       });
       hostsHtml += '</div>';
-      div.innerHTML = '<div class="tenant-header">' +
+
+      div.innerHTML =
+        '<div class="tenant-header">' +
           '<div><div class="tenant-name" onclick="window.open(\'' + tenant.url + '\', \'_blank\')">' + tenant.tenant + '</div><div class="tenant-url">' + tenant.url + '</div></div>' +
           '<span class="status-badge ' + (issues>0?'badge-warning':'badge-ok') + '">' + hosts.length + ' hosts • ' + issues + ' issues</span>' +
         '</div>' + hostsHtml;
@@ -365,44 +450,62 @@ function renderTenantsOnly(data){
     container.appendChild(div);
   });
 
-  const issuesCard = document.getElementById('issues-card'); issuesCard.className='stat-card';
+  const issuesCard = document.getElementById('issues-card');
+  issuesCard.className='stat-card';
   if (totalIssues>0){
     const hasError = allHosts.some(h=>{
       const d=getDiskAlert(h);
       return (h.issues||[]).some(i=>i.led===0) || d.alert==='error';
     });
     issuesCard.classList.add(hasError?'issue-card-error':'issue-card-warn');
-  } else { issuesCard.classList.add('issue-card-ok'); }
+  } else {
+    issuesCard.classList.add('issue-card-ok');
+  }
 
-  document.getElementById('total-hosts').textContent = totalHosts;
+  document.getElementById('total-hosts').textContent    = totalHosts;
   document.getElementById('total-services').textContent = totalServices;
-  document.getElementById('issues').textContent = totalIssues;
+  document.getElementById('issues').textContent         = totalIssues;
 }
 
-// Events
-document.getElementById('sortSelect').addEventListener('change', (e)=>{
-  const sorted = sortTenants(tenantsData, e.target.value);
-  renderTenantsOnly(sorted);
-});
-document.getElementById('hostFilter').addEventListener('input', ()=>{
-  const sorted = sortTenants(tenantsData, document.getElementById('sortSelect').value);
-  renderTenantsOnly(sorted);
+/* --------------------------------- EVENTS --------------------------------- */
+
+document.addEventListener('DOMContentLoaded', () => {
+  const logoutBtn = document.getElementById('logoutBtn');
+  if (logoutBtn) logoutBtn.addEventListener('click', () => { window.location.href = '/logout'; });
+
+  initTheme();
+
+  const sortSel = document.getElementById('sortSelect');
+  if (sortSel) {
+    sortSel.addEventListener('change', (e)=>{
+      const sorted = sortTenants(tenantsData, e.target.value);
+      renderTenantsOnly(sorted);
+    });
+  }
+
+  const filterInput = document.getElementById('hostFilter');
+  if (filterInput) {
+    filterInput.addEventListener('input', ()=>{
+      const sorted = sortTenants(tenantsData, document.getElementById('sortSelect').value);
+      renderTenantsOnly(sorted);
+    });
+  }
 });
 
-// Theme init
-initTheme();
-window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e)=>{
-  if (!localStorage.getItem('theme')) setTheme(e.matches ? 'dark':'light');
-});
+document.getElementById('modalClose').addEventListener('click', closeModal);
+document.getElementById('hostModal').addEventListener('click', (e)=>{ if(e.target.id==='hostModal') closeModal(); });
 
-// Initial fetch & auto-refresh
+/* ----------------------------- FETCH / REFRESH ----------------------------- */
+
 function fetchDataAndRender(){
   fetch('/api/data').then(r=>r.json()).then(data=>{
     renderTenants(data);
   }).catch(err=>{
-    document.getElementById('tenants').innerHTML = '<div class="tenant error"><div class="error-msg">Failed to load data: '+err+'</div></div>';
+    document.getElementById('tenants').innerHTML =
+      '<div class="tenant error"><div class="error-msg">Failed to load data: '+err+'</div></div>';
   });
 }
+
 fetchDataAndRender();
 
 if (window.AUTO_REFRESH_SECONDS > 0){
@@ -415,3 +518,6 @@ if (window.AUTO_REFRESH_SECONDS > 0){
     }).catch(err=>console.error('Auto-refresh failed:', err));
   }, window.AUTO_REFRESH_SECONDS * 1000);
 }
+
+/* Make modal open function available for inline onclick */
+window.showHostDetails = showHostDetails;
