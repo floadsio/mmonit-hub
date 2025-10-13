@@ -7,7 +7,7 @@ APP := app.py
 PORT := 8082
 
 # --- Targets ---
-.PHONY: all venv install run gunicorn clean reset help
+.PHONY: all venv install run gunicorn clean reset help show-config
 
 all: run
 
@@ -55,3 +55,7 @@ help:
 	@echo "  make clean      - Remove venv and caches"
 	@echo "  make reset      - Clean and recreate venv"
 	@echo "  make help       - Show this help"
+
+## Show which configuration is active
+show-config:
+	@python3 -c "import config_loader; print('Using config from:', config_loader.load_config()['_config_source'])"
