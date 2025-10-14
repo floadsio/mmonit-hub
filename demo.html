@@ -1,442 +1,747 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="utf-8">
-    <title>M/Monit Hub - Demo</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        
-        :root {
-            --bg-primary: #0f172a;
-            --bg-secondary: #1e293b;
-            --bg-tertiary: #0f172a;
-            --text-primary: #e2e8f0;
-            --text-secondary: #94a3b8;
-            --border-color: #334155;
-            --border-subtle: #64748b;
-        }
-        
-        [data-theme="light"] {
-            --bg-primary: #f8fafc;
-            --bg-secondary: #ffffff;
-            --bg-tertiary: #f1f5f9;
-            --text-primary: #0f172a;
-            --text-secondary: #64748b;
-            --border-color: #e2e8f0;
-            --border-subtle: #cbd5e1;
-        }
-        
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            padding: 20px;
-            transition: background-color 0.3s, color 0.3s;
-        }
-        .demo-notice {
-            background: #3b82f6;
-            color: white;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            text-align: center;
-            font-weight: 500;
-        }
-        .demo-notice a {
-            color: white;
-            text-decoration: underline;
-        }
-        .header {
-            background: var(--bg-secondary);
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            border-left: 4px solid #3b82f6;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .header-content h1 { font-size: 24px; margin-bottom: 8px; }
-        .subtitle { color: var(--text-secondary); font-size: 14px; }
-        
-        .controls {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        }
-        
-        .sort-dropdown {
-            padding: 8px 12px;
-            border-radius: 4px;
-            border: 1px solid var(--border-color);
-            background: var(--bg-tertiary);
-            color: var(--text-primary);
-            font-size: 14px;
-            cursor: pointer;
-        }
-        
-        .theme-toggle {
-            padding: 8px 12px;
-            border-radius: 4px;
-            border: 1px solid var(--border-color);
-            background: var(--bg-tertiary);
-            color: var(--text-primary);
-            cursor: pointer;
-            font-size: 14px;
-        }
-        
-        .theme-toggle:hover {
-            background: var(--border-color);
-        }
-        
-        .tenant {
-            background: var(--bg-secondary);
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
-            border-left: 4px solid var(--border-subtle);
-        }
-        .tenant.error { border-left-color: #ef4444; }
-        .tenant.issues { border-left-color: #f59e0b; }
-        .tenant.ok { border-left-color: #10b981; }
-        .tenant-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-        }
-        .tenant-name { font-size: 20px; font-weight: 600; cursor: pointer; }
-        .tenant-name:hover { color: #3b82f6; }
-        .tenant-url { color: var(--text-secondary); font-size: 12px; margin-top: 4px; }
-        .status-badge {
-            padding: 4px 12px;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: 600;
-        }
-        .badge-error { background: #ef4444; color: white; }
-        .badge-warning { background: #f59e0b; color: white; }
-        .badge-ok { background: #10b981; color: white; }
-        .hosts {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-            gap: 10px;
-            margin-top: 15px;
-        }
-        .host {
-            background: var(--bg-tertiary);
-            padding: 12px;
-            border-radius: 6px;
-            border: 1px solid var(--border-color);
-            cursor: pointer;
-            transition: transform 0.2s, border-color 0.2s;
-        }
-        .host:hover {
-            transform: translateY(-2px);
-            border-color: #3b82f6;
-        }
-        .host.error { 
-            border-color: #ef4444;
-        }
-        [data-theme="dark"] .host.error {
-            background: #1e1518;
-        }
-        [data-theme="light"] .host.error {
-            background: #fef2f2;
-        }
-        .host-name { font-weight: 500; margin-bottom: 4px; }
-        .host-status { font-size: 12px; color: var(--text-secondary); }
-        .host-status.down { color: #ef4444; }
-        .host-details { font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
-        .host-issues { 
-            font-size: 11px; 
-            color: #ef4444; 
-            margin-top: 6px; 
-            padding-top: 6px;
-            border-top: 1px solid var(--border-color);
-            font-weight: 500;
-        }
-        .host-issues.warning { color: #f59e0b; }
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 20px;
-        }
-        .stat-card {
-            background: var(--bg-secondary);
-            padding: 15px;
-            border-radius: 8px;
-            text-align: center;
-        }
-        .stat-value { font-size: 32px; font-weight: 700; margin-bottom: 4px; }
-        .stat-label { color: var(--text-secondary); font-size: 12px; text-transform: uppercase; }
-    </style>
+  <meta charset="utf-8">
+  <title>M/Monit Hub – Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f172a">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg-primary: #0f172a;
+      --bg-secondary: #1e293b;
+      --bg-tertiary: #0f172a;
+      --text-primary: #e2e8f0;
+      --text-secondary: #94a3b8;
+      --border-color: #334155;
+      --border-subtle: #64748b;
+      --accent: #3b82f6;
+    }
+    [data-theme="light"] {
+      --bg-primary: #f8fafc;
+      --bg-secondary: #ffffff;
+      --bg-tertiary: #f1f5f9;
+      --text-primary: #0f172a;
+      --text-secondary: #64748b;
+      --border-color: #e2e8f0;
+      --border-subtle: #cbd5e1;
+      --accent: #2563eb;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      padding: 20px;
+      transition: background-color .3s, color .3s;
+    }
+    .header {
+      background: var(--bg-secondary);
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      border-left: 4px solid var(--accent);
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;
+    }
+    .header-content { margin-right: 20px; }
+    .header-content h1 { font-size: 24px; margin-bottom: 8px; }
+    .subtitle { color: var(--text-secondary); font-size: 14px; }
+
+    .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .user-logout-group { display:flex; gap:8px; align-items:center; }
+
+    .user-info {
+      font-size: 14px; color: var(--accent);
+      padding: 8px 12px; border-radius: 4px;
+      background: var(--bg-tertiary); border: 1px solid var(--border-color); white-space: nowrap;
+    }
+    .logout-btn {
+      padding: 8px 12px; border-radius: 4px; border: 1px solid var(--border-color);
+      background: var(--bg-tertiary); color: var(--text-primary); cursor: pointer; font-size: 14px;
+    }
+    .logout-btn:hover { background: var(--border-color); }
+
+    .filter-input {
+      padding: 8px 12px; border-radius: 4px; border: 1px solid var(--border-color);
+      background: var(--bg-tertiary); color: var(--text-primary); font-size: 14px; flex: 1 1 240px;
+    }
+    .sort-dropdown {
+      padding: 8px 12px; border-radius: 4px; border: 1px solid var(--border-color);
+      background: var(--bg-tertiary); color: var(--text-primary); font-size: 14px; cursor: pointer;
+    }
+    .theme-toggle {
+      padding: 8px 12px; border-radius: 4px; border: 1px solid var(--border-color);
+      background: var(--bg-tertiary); color: var(--text-primary); cursor: pointer; font-size: 14px;
+    }
+    .theme-toggle:hover { background: var(--border-color); }
+
+    .stats {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 15px; margin-bottom: 10px;
+    }
+    .stat-card {
+      background: var(--bg-secondary);
+      padding: 15px; border-radius: 8px; text-align: center;
+    }
+    .stat-value { font-size: 32px; font-weight: 700; margin-bottom: 4px; }
+    .stat-label { color: var(--text-secondary); font-size: 12px; text-transform: uppercase; }
+
+    .issue-card-error  { background: #ef4444; color: #fff; border: 1px solid #b91c1c; }
+    .issue-card-warn   { background: #f59e0b; color: #fff; border: 1px solid #d97706; }
+    .issue-card-ok     { background: #10b981; color: #fff; border: 1px solid #047857; }
+
+    .refresh-info {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 0; margin-bottom: 20px; border-bottom: 1px solid var(--border-color);
+      font-size: 13px; color: var(--text-secondary);
+    }
+
+    .tenant {
+      background: var(--bg-secondary); border-radius: 8px; padding: 20px; margin-bottom: 20px;
+      border-left: 4px solid var(--border-subtle);
+    }
+    .tenant.error  { border-left-color: #ef4444; }
+    .tenant.issues { border-left-color: #f59e0b; }
+    .tenant.ok     { border-left-color: #10b981; }
+
+    .tenant-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; flex-wrap:wrap; }
+    .tenant-name { font-size: 20px; font-weight: 600; cursor:pointer; }
+    .tenant-name:hover { color: var(--accent); }
+    .tenant-url { color: var(--text-secondary); font-size: 12px; margin-top: 4px; }
+    .status-badge { padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+    .badge-error { background:#ef4444; color:#fff; }
+    .badge-warning { background:#f59e0b; color:#fff; }
+    .badge-ok { background:#10b981; color:#fff; }
+
+    .hosts { display:grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; margin-top: 15px; }
+    .host {
+      background: var(--bg-tertiary); padding: 12px; border-radius: 6px; border: 1px solid var(--border-color);
+      cursor: pointer; transition: transform .2s, border-color .2s; display:block;
+    }
+    .host.hidden { display:none; }
+    .host:hover { transform: translateY(-2px); border-color: var(--accent); }
+    .host.error { border-color:#ef4444; }
+    .host.warn  { border-color:#f59e0b; }
+
+    [data-theme="dark"] .host.error { background:#1e1518; }
+    [data-theme="light"] .host.error { background:#fef2f2; }
+    [data-theme="dark"] .host.warn  { background:#2a2112; }
+    [data-theme="light"] .host.warn  { background:#fff7ed; }
+
+    .host-name { font-weight: 500; margin-bottom: 4px; }
+    .host-status { font-size:12px; color:var(--text-secondary); display:flex; justify-content:space-between; align-items:center; }
+    .host-status .os-info { font-size:11px; color:var(--text-secondary); margin-left:8px; white-space:nowrap; }
+    .host-status.down { color:#ef4444; }
+    .host-details { font-size:11px; color:var(--text-secondary); margin-top:4px; }
+
+    .host-issues { font-size:11px; color:#ef4444; margin-top:6px; padding-top:6px; border-top:1px solid var(--border-color); font-weight:500; }
+    .host-issues.warning { color:#f59e0b; }
+
+    .modal { display:none; position:fixed; z-index:1000; inset:0; background:rgba(0,0,0,.7); backdrop-filter:blur(4px); }
+    .modal.show { display:flex; align-items:center; justify-content:center; }
+    .modal-content { background:var(--bg-secondary); border-radius:12px; padding:30px; max-width:600px; width:90%; max-height:80vh; overflow:auto; border:1px solid var(--border-color); }
+    .modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; padding-bottom:15px; border-bottom:1px solid var(--border-color); }
+    .modal-title { font-size:24px; font-weight:600; }
+    .modal-close { background:none; border:none; font-size:28px; cursor:pointer; color:var(--text-secondary); width:32px; height:32px; border-radius:4px; }
+    .modal-close:hover { background:var(--border-color); }
+    .detail-row { display:flex; justify-content:space-between; gap:16px; padding:12px 0; border-bottom:1px solid var(--border-color); }
+    .detail-row:last-child { border-bottom:none; }
+    .detail-label { color:var(--text-secondary); font-weight:500; min-width:160px; }
+    .detail-value { color:var(--text-primary); flex:1; }
+
+    .status-indicator { display:inline-block; padding:4px 12px; border-radius:4px; font-size:12px; font-weight:600; }
+    .status-indicator.ok { background:#10b981; color:#fff; }
+    .status-indicator.warning { background:#f59e0b; color:#fff; }
+    .status-indicator.error { background:#ef4444; color:#fff; }
+
+    .services-row .service-item {
+      display:flex; justify-content:space-between; align-items:center;
+      padding:8px 0; border-bottom:1px dashed var(--border-color);
+    }
+    .services-row .service-item:last-child { border-bottom:none; }
+
+    @media (max-width: 768px) {
+      body { padding: 10px; }
+      .header { flex-direction: column; align-items: flex-start; padding: 15px; }
+      .controls { margin-top: 15px; width: 100%; flex-direction: column; align-items: stretch; }
+      .tenant-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+      .tenant-name { font-size: 22px; }
+      .hosts { grid-template-columns: 1fr; gap: 10px; }
+      .host { padding: 15px; }
+      .host-name { font-size: 16px; }
+      .refresh-info { flex-direction: column; gap: 5px; font-size: 12px; }
+      .host-status { flex-direction: column; align-items: flex-start; gap: 2px; font-size: 12px; }
+      .host-status .os-info { margin-left: 0; white-space: normal; text-align: left; }
+    }
+  </style>
 </head>
-<body data-theme="dark">
-    <div class="demo-notice">
-        📊 This is a demo with fake data. <a href="https://github.com/floadsio/mmonit-hub" target="_blank">View the project on GitHub</a>
+<body>
+  <div class="header">
+    <div class="header-content">
+      <h1>🖥️ M/Monit Hub (Demo)</h1>
+      <div class="subtitle">Multi-tenant monitoring dashboard</div>
     </div>
-
-    <div class="header">
-        <div class="header-content">
-            <h1>🖥️ M/Monit Hub</h1>
-            <div class="subtitle">Multi-tenant monitoring dashboard</div>
-        </div>
-        <div class="controls">
-            <select class="sort-dropdown" id="sortSelect">
-                <option value="issues-first" selected>Issues First</option>
-                <option value="name">Sort by Name</option>
-                <option value="hosts">Sort by Host Count</option>
-                <option value="cpu">Sort by CPU Usage</option>
-                <option value="memory">Sort by Memory Usage</option>
-            </select>
-            <button class="theme-toggle" id="themeToggle">
-                <span id="themeIcon">☀️</span>
-            </button>
-        </div>
+    <div class="controls">
+      <div class="user-logout-group">
+        <span class="user-info">👤 Demo User</span>
+        <button class="logout-btn" id="logoutBtn" title="No-op in demo">Logout / Change User</button>
+      </div>
+      <input type="text" id="hostFilter" placeholder="Filter hosts, OS, versions, services…" class="filter-input">
+      <select class="sort-dropdown" id="sortSelect">
+        <option value="issues-first">Issues First</option>
+        <option value="name">Sort by Name</option>
+        <option value="hosts">Sort by Host Count</option>
+        <option value="cpu">Sort by CPU Usage</option>
+        <option value="memory">Sort by Memory Usage</option>
+        <option value="disk">Sort by Disk Usage</option>
+        <option value="os">Sort by OS</option>
+        <option value="os-version">Sort by OS Version</option>
+        <option value="os-update-needed">Needs OS Review</option>
+      </select>
+      <button class="theme-toggle" id="themeToggle" title="Toggle theme"><span id="themeIcon">🌙</span></button>
     </div>
-    
-    <div class="stats">
-        <div class="stat-card">
-            <div class="stat-value">4</div>
-            <div class="stat-label">Total Tenants</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value">27</div>
-            <div class="stat-label">Total Hosts</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value">3</div>
-            <div class="stat-label">Issues Detected</div>
-        </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat-card">
+      <div class="stat-value" id="total-tenants">-</div>
+      <div class="stat-label">Total Tenants</div>
     </div>
-    
-    <div id="tenants">
-        <!-- Tenant with connection error -->
-        <div class="tenant error">
-            <div class="tenant-header">
-                <div>
-                    <div class="tenant-name">Development Cluster</div>
-                    <div class="tenant-url">https://mmonit-dev.example.com:8080</div>
-                </div>
-                <span class="status-badge badge-error">ERROR</span>
-            </div>
-            <div style="color: #ef4444; font-size: 14px;">⚠️ Connection failed - Unable to reach mmonit instance</div>
-        </div>
-
-        <!-- Tenant with issues -->
-        <div class="tenant issues">
-            <div class="tenant-header">
-                <div>
-                    <div class="tenant-name">Production US-East</div>
-                    <div class="tenant-url">https://mmonit-us.example.com:8080</div>
-                </div>
-                <span class="status-badge badge-warning">8 hosts • 2 issues</span>
-            </div>
-            <div class="hosts">
-                <div class="host">
-                    <div class="host-name">web-01.prod</div>
-                    <div class="host-status">🟢 Running</div>
-                    <div class="host-details">CPU: 12.4% | Mem: 45.2% | Disk: 58.3%</div>
-                </div>
-                <div class="host error">
-                    <div class="host-name">web-02.prod</div>
-                    <div class="host-status down">🔴 Error</div>
-                    <div class="host-details">CPU: 0.8% | Mem: 23.1% | Disk: 62.1%</div>
-                    <div class="host-issues">⚠️ nginx, php-fpm</div>
-                </div>
-                <div class="host">
-                    <div class="host-name">db-primary.prod</div>
-                    <div class="host-status">🟢 Running</div>
-                    <div class="host-details">CPU: 34.7% | Mem: 78.4% | Disk: 71.2%</div>
-                </div>
-                <div class="host">
-                    <div class="host-name">db-replica.prod</div>
-                    <div class="host-status">🟢 Running</div>
-                    <div class="host-details">CPU: 28.2% | Mem: 72.8% | Disk: 69.5%</div>
-                </div>
-                <div class="host">
-                    <div class="host-name">cache-01.prod</div>
-                    <div class="host-status">🟢 Running</div>
-                    <div class="host-details">CPU: 5.1% | Mem: 32.4% | Disk: 42.8%</div>
-                </div>
-                <div class="host">
-                    <div class="host-name">api-gateway.prod</div>
-                    <div class="host-status">🟢 Running</div>
-                    <div class="host-details">CPU: 18.9% | Mem: 54.3% | Disk: 55.7%</div>
-                </div>
-                <div class="host error">
-                    <div class="host-name">worker-01.prod</div>
-                    <div class="host-status down">🟡 Warning</div>
-                    <div class="host-details">CPU: 89.3% | Mem: 91.2% | Disk: 88.4%</div>
-                    <div class="host-issues warning">⚠️ disk space</div>
-                </div>
-                <div class="host">
-                    <div class="host-name">worker-02.prod</div>
-                    <div class="host-status">🟢 Running</div>
-                    <div class="host-details">CPU: 42.6% | Mem: 68.9% | Disk: 64.3%</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Healthy tenant -->
-        <div class="tenant ok">
-            <div class="tenant-header">
-                <div>
-                    <div class="tenant-name">Production EU</div>
-                    <div class="tenant-url">https://mmonit-eu.example.com:8080</div>
-                </div>
-                <span class="status-badge badge-ok">12 hosts • 0 issues</span>
-            </div>
-            <div class="hosts">
-                <div class="host">
-                    <div class="host-name">web-01.eu</div>
-                    <div class="host-status">🟢 Running</div>
-                    <div class="host-details">CPU: 8.3% | Mem: 42.1% | Disk: 51.2%</div>
-                </div>
-                <div class="host">
-                    <div class="host-name">web-02.eu</div>
-                    <div class="host-status">🟢 Running</div>
-                    <div class="host-details">CPU: 9.7% | Mem: 44.8% | Disk: 52.7%</div>
-                </div>
-                <div class="host">
-                    <div class="host-name">web-03.eu</div>
-                    <div class="host-status">🟢 Running</div>
-                    <div class="host-details">CPU: 7.2% | Mem: 39.3% | Disk: 49.8%</div>
-                </div>
-                <div class="host">
-                    <div class="host-name">db-primary.eu</div>
-                    <div class="host-status">🟢 Running</div>
-                    <div class="host-details">CPU: 22.4% | Mem: 68.2% | Disk: 65.4%</div>
-                </div>
-                <div class="host">
-                    <div class="host-name">db-replica-01.eu</div>
-                    <div class="host-status">🟢 Running</div>
-                    <div class="host-details">CPU: 19.8% | Mem: 64.7% | Disk: 63.1%</div>
-                </div>
-                <div class="host">
-                    <div class="host-name">db-replica-02.eu</div>
-                    <div class="host-status">🟢 Running</div>
-                    <div class="host-details">CPU: 18.3% | Mem: 62.4% | Disk: 61.9%</div>
-                </div>
-                <div class="host">
-                    <div class="host-name">cache-01.eu</div>
-                    <div class="host-status">🟢 Running</div>
-                    <div class="host-details">CPU: 4.2% | Mem: 28.9% | Disk: 38.2%</div>
-                </div>
-                <div class="host">
-                    <div class="host-name">cache-02.eu</div>
-                    <div class="host-status">🟢 Running</div>
-                    <div class="host-details">CPU: 3.8% | Mem: 26.4% | Disk: 36.7%</div>
-                </div>
-                <div class="host">
-                    <div class="host-name">lb-01.eu</div>
-                    <div class="host-status">🟢 Running</div>
-                    <div class="host-details">CPU: 6.4% | Mem: 18.7% | Disk: 32.4%</div>
-                </div>
-                <div class="host">
-                    <div class="host-name">lb-02.eu</div>
-                    <div class="host-status">🟢 Running</div>
-                    <div class="host-details">CPU: 5.9% | Mem: 17.2% | Disk: 31.8%</div>
-                </div>
-                <div class="host">
-                    <div class="host-name">worker-01.eu</div>
-                    <div class="host-status">🟢 Running</div>
-                    <div class="host-details">CPU: 31.2% | Mem: 58.4% | Disk: 57.3%</div>
-                </div>
-                <div class="host">
-                    <div class="host-name">worker-02.eu</div>
-                    <div class="host-status">🟢 Running</div>
-                    <div class="host-details">CPU: 28.7% | Mem: 55.1% | Disk: 54.8%</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Small staging environment -->
-        <div class="tenant ok">
-            <div class="tenant-header">
-                <div>
-                    <div class="tenant-name">Staging</div>
-                    <div class="tenant-url">https://mmonit-staging.example.com:8080</div>
-                </div>
-                <span class="status-badge badge-ok">6 hosts • 0 issues</span>
-            </div>
-            <div class="hosts">
-                <div class="host">
-                    <div class="host-name">web.staging</div>
-                    <div class="host-status">🟢 Running</div>
-                    <div class="host-details">CPU: 3.2% | Mem: 24.7% | Disk: 41.2%</div>
-                </div>
-                <div class="host">
-                    <div class="host-name">db.staging</div>
-                    <div class="host-status">🟢 Running</div>
-                    <div class="host-details">CPU: 8.4% | Mem: 38.2% | Disk: 48.9%</div>
-                </div>
-                <div class="host">
-                    <div class="host-name">cache.staging</div>
-                    <div class="host-status">🟢 Running</div>
-                    <div class="host-details">CPU: 1.8% | Mem: 15.3% | Disk: 28.4%</div>
-                </div>
-                <div class="host">
-                    <div class="host-name">api.staging</div>
-                    <div class="host-status">🟢 Running</div>
-                    <div class="host-details">CPU: 4.7% | Mem: 29.8% | Disk: 38.7%</div>
-                </div>
-                <div class="host">
-                    <div class="host-name">worker.staging</div>
-                    <div class="host-status">🟢 Running</div>
-                    <div class="host-details">CPU: 12.3% | Mem: 41.2% | Disk: 45.3%</div>
-                </div>
-                <div class="host">
-                    <div class="host-name">monitor.staging</div>
-                    <div class="host-status">🟢 Running</div>
-                    <div class="host-details">CPU: 2.1% | Mem: 18.4% | Disk: 34.6%</div>
-                </div>
-            </div>
-        </div>
+    <div class="stat-card">
+      <div class="stat-value" id="total-hosts">-</div>
+      <div class="stat-label">Total Hosts</div>
     </div>
-    
-    <script>
-        const themeToggle = document.getElementById('themeToggle');
-        const themeIcon = document.getElementById('themeIcon');
-        
-        // Initialize theme
-        function initTheme() {
-            // Check URL parameter first
-            const urlParams = new URLSearchParams(window.location.search);
-            const urlTheme = urlParams.get('theme');
-            
-            if (urlTheme === 'dark' || urlTheme === 'light') {
-                setTheme(urlTheme);
-                return;
+    <div class="stat-card">
+      <div class="stat-value" id="total-services">-</div>
+      <div class="stat-label">Total Services</div>
+    </div>
+    <div class="stat-card" id="issues-card">
+      <div class="stat-value" id="issues">-</div>
+      <div class="stat-label">Issues Detected</div>
+    </div>
+  </div>
+
+  <div class="stats" id="os-stats-container"></div>
+
+  <div class="refresh-info">
+    <span id="last-update">Last Updated: N/A</span>
+    <span id="refresh-interval-display"></span>
+  </div>
+
+  <div id="tenants"></div>
+
+  <div id="hostModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title" id="modalTitle"></div>
+        <button class="modal-close" id="modalClose">&times;</button>
+      </div>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+
+  <script>
+    // ---------------- DEMO SETUP ----------------
+    const AUTO_REFRESH_SECONDS = 0; // no auto-refresh for demo
+    const DISK_WARN_PCT = 80;
+    const DISK_ERR_PCT  = 90;
+
+    // Fake data shaped like the API
+    const DEMO_DATA = {
+      username: "Demo User",
+      last_fetch_time: Math.floor(Date.now()/1000),
+      refresh_interval: AUTO_REFRESH_SECONDS,
+      tenants: [
+        {
+          tenant: "Production EU",
+          url: "https://mmonit-eu.example.com:8080",
+          hosts: [
+            {
+              id: 101, hostname: "eu-app-01", led: 2, cpu: 23, mem: 61, events: 0, heartbeat: true,
+              os_name: "Ubuntu", os_release: "22.04.3",
+              filesystems: [
+                { name: "/", usage_percent: 62.1, usage_mb: 200000, total_mb: 320000 },
+                { name: "/var", usage_percent: 79.3, usage_mb: 95000, total_mb: 120000 }
+              ],
+              issues: [],
+              service_count: 6,
+              service_names: ["nginx","app","ssh","system","cron","monit"],
+              services_detail: [
+                { name: "nginx", type: "Process", led: 2, status: "OK" },
+                { name: "app", type: "Process", led: 2, status: "OK" },
+                { name: "ssh", type: "Process", led: 2, status: "OK" },
+                { name: "system", type: "System", led: 2, status: "OK" },
+                { name: "cron", type: "Process", led: 2, status: "OK" },
+                { name: "monit", type: "Process", led: 2, status: "OK" }
+              ]
+            },
+            {
+              id: 102, hostname: "eu-db-01", led: 1, cpu: 55, mem: 82, events: 4, heartbeat: true,
+              os_name: "Debian", os_release: "12.2",
+              filesystems: [
+                { name: "/", usage_percent: 68.4, usage_mb: 120000, total_mb: 240000 },
+                { name: "/data", usage_percent: 89.2, usage_mb: 880000, total_mb: 986000 }
+              ],
+              issues: [
+                { name: "postgres", type: "Process", status: "Memory usage high", led: 1 }
+              ],
+              service_count: 5,
+              service_names: ["postgres","ssh","system","cron","monit"],
+              services_detail: [
+                { name: "postgres", type: "Process", led: 1, status: "Memory usage high" },
+                { name: "ssh", type: "Process", led: 2, status: "OK" },
+                { name: "system", type: "System", led: 2, status: "OK" },
+                { name: "cron", type: "Process", led: 2, status: "OK" },
+                { name: "monit", type: "Process", led: 2, status: "OK" }
+              ]
             }
-            
-            const savedTheme = localStorage.getItem('mmonit-hub-demo-theme');
-            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-            const theme = savedTheme || (prefersDark ? 'dark' : 'light');
-            setTheme(theme);
-        }
-        
-        function setTheme(theme) {
-            document.documentElement.setAttribute('data-theme', theme);
-            themeIcon.textContent = theme === 'dark' ? '☀️' : '🌙';
-            localStorage.setItem('mmonit-hub-demo-theme', theme);
-        }
-        
-        themeToggle.addEventListener('click', () => {
-            const currentTheme = document.documentElement.getAttribute('data-theme');
-            setTheme(currentTheme === 'dark' ? 'light' : 'dark');
-        });
-        
-        initTheme();
-        
-        // System theme change listener
-        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
-            if (!localStorage.getItem('mmonit-hub-demo-theme')) {
-                setTheme(e.matches ? 'dark' : 'light');
+          ]
+        },
+        {
+          tenant: "Staging US",
+          url: "https://mmonit-us.example.com:8080",
+          hosts: [
+            {
+              id: 201, hostname: "us-web-01", led: 0, cpu: 15, mem: 49, events: 7, heartbeat: true,
+              os_name: "FreeBSD", os_release: "14.1-RELEASE-p3",
+              filesystems: [
+                { name: "/", usage_percent: 92.5, usage_mb: 115000, total_mb: 124000 }
+              ],
+              issues: [
+                { name: "nginx", type: "Process", status: "Process not running", led: 0 },
+                { name: "filesystem.root", type: "Filesystem", status: "Space > 90%", led: 0 }
+              ],
+              service_count: 4,
+              service_names: ["nginx","ssh","system","monit"],
+              services_detail: [
+                { name: "nginx", type: "Process", led: 0, status: "Process not running" },
+                { name: "ssh", type: "Process", led: 2, status: "OK" },
+                { name: "system", type: "System", led: 2, status: "OK" },
+                { name: "monit", type: "Process", led: 2, status: "OK" }
+              ]
+            },
+            {
+              id: 202, hostname: "us-api-01", led: 2, cpu: 12, mem: 41, events: 0, heartbeat: true,
+              os_name: "Ubuntu", os_release: "", /* triggers OS review sort */
+              filesystems: [
+                { name: "/", usage_percent: 40.2, usage_mb: 40000, total_mb: 120000 }
+              ],
+              issues: [],
+              service_count: 5,
+              service_names: ["api","ssh","system","cron","monit"],
+              services_detail: [
+                { name: "api", type: "Process", led: 2, status: "OK" },
+                { name: "ssh", type: "Process", led: 2, status: "OK" },
+                { name: "system", type: "System", led: 2, status: "OK" },
+                { name: "cron", type: "Process", led: 2, status: "OK" },
+                { name: "monit", type: "Process", led: 2, status: "OK" }
+              ]
             }
+          ]
+        }
+      ]
+    };
+
+    // ---------------- THEME ----------------
+    function setTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      document.getElementById('themeIcon').textContent = theme === 'dark' ? '☀️' : '🌙';
+      localStorage.setItem('theme', theme);
+    }
+    function initTheme() {
+      const saved = localStorage.getItem('theme');
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      setTheme(saved || (prefersDark ? 'dark' : 'light'));
+      // live follow system if user hasn't chosen (we follow saved if exists)
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+        if (!localStorage.getItem('theme')) setTheme(e.matches ? 'dark' : 'light');
+      });
+    }
+
+    // ---------------- UI HELPERS ----------------
+    let tenantsData = [];
+    const DISK_WARN = DISK_WARN_PCT;
+    const DISK_ERR  = DISK_ERR_PCT;
+
+    function getDiskAlert(host) {
+      if (!host.filesystems || host.filesystems.length === 0) return { alert: null, max: 0 };
+      const max = host.filesystems.reduce((m, fs) => Math.max(m, fs.usage_percent || 0), 0);
+      if (max >= DISK_ERR)  return { alert: 'error',   max };
+      if (max >= DISK_WARN) return { alert: 'warning', max };
+      return { alert: null, max };
+    }
+    function compareVersions(v1, v2) {
+      v1 = v1 || '0'; v2 = v2 || '0';
+      const a = v1.split('-')[0].split('.'), b = v2.split('-')[0].split('.');
+      for (let i=0;i<Math.max(a.length,b.length);i++){
+        const n1 = parseInt(a[i])||0, n2 = parseInt(b[i])||0;
+        if (n1<n2) return -1; if (n1>n2) return 1;
+      }
+      return 0;
+    }
+    function displayTimeInfo(lastFetchUnix, refreshSeconds) {
+      const lastUpdateElement = document.getElementById('last-update');
+      const intervalElement = document.getElementById('refresh-interval-display');
+      if (lastFetchUnix) {
+        const date = new Date(lastFetchUnix * 1000);
+        lastUpdateElement.textContent = 'Last Updated: ' + date.toLocaleTimeString();
+      } else {
+        lastUpdateElement.textContent = 'Last Updated: N/A';
+      }
+      intervalElement.textContent = refreshSeconds > 0 ? 'Auto-refresh: ' + refreshSeconds + 's' : 'Auto-refresh: Disabled';
+    }
+    function renderOSStats(allHosts) {
+      const osCounts = allHosts.reduce((acc, h) => {
+        if (h.os_name && h.os_name !== 'OS N/A') acc[h.os_name] = (acc[h.os_name] || 0) + 1;
+        return acc;
+      }, {});
+      const sorted = Object.entries(osCounts).sort(([,A],[,B]) => B-A);
+      const container = document.getElementById('os-stats-container');
+      container.innerHTML = '';
+      if (sorted.length === 0) { container.style.display = 'none'; return; } else { container.style.display = 'grid'; }
+      sorted.slice(0,4).forEach(([name,count])=>{
+        const card = document.createElement('div'); card.className='stat-card';
+        card.innerHTML = `<div class="stat-value">${count}</div><div class="stat-label">${name.toUpperCase()} HOSTS</div>`;
+        container.appendChild(card);
+      });
+    }
+
+    // ---------------- RENDERING ----------------
+    function showHostDetails(host, tenantUrl) {
+      const modal = document.getElementById('hostModal');
+      const modalTitle = document.getElementById('modalTitle');
+      const modalBody = document.getElementById('modalBody');
+      const statusClass = host.led === 0 ? 'error' : (host.led === 1 ? 'warning' : 'ok');
+      const statusText  = host.led === 0 ? 'Error' : (host.led === 1 ? 'Warning' : 'OK');
+
+      let filesystemsHtml = '';
+      if (host.filesystems && host.filesystems.length > 0) {
+        filesystemsHtml = '<div class="detail-row"><div class="detail-label">Filesystems</div><div class="detail-value">';
+        host.filesystems.forEach(fs => {
+          const usageClass = fs.usage_percent >= DISK_ERR ? 'error'
+                           : (fs.usage_percent >= DISK_WARN ? 'warning' : 'ok');
+          filesystemsHtml += `<div style="margin-bottom:8px;">
+              <div><strong>${fs.name}</strong></div>
+              <div><span class="status-indicator ${usageClass}">${fs.usage_percent.toFixed(1)}%</span>
+              ${fs.usage_mb != null ? ` ${(fs.usage_mb/1024).toFixed(1)} GB / ${(fs.total_mb/1024).toFixed(1)} GB` : ''}</div>
+            </div>`;
         });
-    </script>
+        filesystemsHtml += '</div></div>';
+      }
+
+      let issuesDetailsHtml = '';
+      if (host.issues && host.issues.length > 0) {
+        issuesDetailsHtml = '<div class="detail-row"><div class="detail-label">Service Issues</div><div class="detail-value">';
+        host.issues.forEach(issue => {
+          const cls = issue.led === 0 ? 'error' : 'warning';
+          issuesDetailsHtml += `<div style="margin-bottom:8px;">
+              <div><strong>${issue.name}</strong> (${issue.type})</div>
+              <div><span class="status-indicator ${cls}">${issue.status}</span></div>
+            </div>`;
+        });
+        issuesDetailsHtml += '</div></div>';
+      }
+
+      let servicesDetailsHtml = '';
+      if (host.services_detail && host.services_detail.length > 0) {
+        servicesDetailsHtml = '<div class="detail-row services-row"><div class="detail-label">Services</div><div class="detail-value" style="width:100%;">';
+        host.services_detail.forEach(svc => {
+          const svcClass = svc.led === 0 ? 'error' : (svc.led === 1 ? 'warning' : 'ok');
+          servicesDetailsHtml += `<div class="service-item">
+              <div><strong>${svc.name}</strong> <span style="color:var(--text-secondary)">(${svc.type})</span></div>
+              <div><span class="status-indicator ${svcClass}">${svc.status || (svc.led === 2 ? 'OK' : '')}</span></div>
+            </div>`;
+        });
+        servicesDetailsHtml += '</div></div>';
+      }
+
+      modalTitle.textContent = host.hostname;
+      modalBody.innerHTML = `
+        <div class="detail-row">
+          <div class="detail-label">Status</div>
+          <div class="detail-value"><span class="status-indicator ${statusClass}">${statusText}</span></div>
+        </div>
+        ${issuesDetailsHtml}
+        ${servicesDetailsHtml}
+        <div class="detail-row"><div class="detail-label">Operating System</div>
+          <div class="detail-value">${host.os_name} (${host.os_release || 'N/A'})</div></div>
+        <div class="detail-row"><div class="detail-label">CPU Usage</div><div class="detail-value">${host.cpu}%</div></div>
+        <div class="detail-row"><div class="detail-label">Memory Usage</div><div class="detail-value">${host.mem}%</div></div>
+        <div class="detail-row"><div class="detail-label">Events</div><div class="detail-value">${host.events}</div></div>
+        <div class="detail-row"><div class="detail-label">Heartbeat</div><div class="detail-value">${host.heartbeat ? '✓ Active' : '✗ Inactive'}</div></div>
+        <div class="detail-row"><div class="detail-label">Host ID</div><div class="detail-value">${host.id}</div></div>
+        ${filesystemsHtml}
+        <div style="margin-top:20px; text-align:center;">
+          <a href="${tenantUrl}/admin/hosts/get?id=${host.id}" target="_blank" class="logout-btn">View in M/Monit →</a>
+        </div>`;
+      modal.classList.add('show');
+    }
+
+    function renderOSStatsAndCards(processedTenants){
+      const allHosts = processedTenants.flatMap(t=>t.hosts||[]);
+      renderOSStats(allHosts);
+
+      let totalHosts=0,totalIssues=0,totalServices=0;
+      processedTenants.forEach(t=>{
+        const hosts=t.hosts||[];
+        totalHosts+=hosts.length;
+        totalIssues+=hosts.filter(h=>h.led!==2 || getDiskAlert(h).alert).length;
+        totalServices+=hosts.reduce((s,h)=>s+(h.service_count||0),0);
+      });
+
+      const issuesCard = document.getElementById('issues-card'); issuesCard.className='stat-card';
+      if (totalIssues>0){
+        const hasError = allHosts.some(h=>{
+          const d=getDiskAlert(h);
+          return (h.issues||[]).some(i=>i.led===0) || d.alert==='error';
+        });
+        issuesCard.classList.add(hasError?'issue-card-error':'issue-card-warn');
+      } else { issuesCard.classList.add('issue-card-ok'); }
+
+      document.getElementById('total-tenants').textContent = processedTenants.length;
+      document.getElementById('total-hosts').textContent = totalHosts;
+      document.getElementById('total-services').textContent = totalServices;
+      document.getElementById('issues').textContent = totalIssues;
+    }
+
+    function renderTenantsOnly(data){
+      const container=document.getElementById('tenants'); container.innerHTML='';
+      let totalHosts=0,totalIssues=0,totalServices=0;
+      const allHosts = data.flatMap(t=>t.hosts||[]);
+      renderOSStats(allHosts);
+
+      const filterText = document.getElementById('hostFilter').value.toLowerCase();
+      const selectedSort = document.getElementById('sortSelect').value;
+
+      data.forEach(tenant=>{
+        const div=document.createElement('div'); div.className='tenant';
+        if (tenant.error){
+          div.classList.add('error');
+          div.innerHTML = `<div class="tenant-header">
+              <div><div class="tenant-name">${tenant.tenant}</div>
+              <div class="tenant-url">${tenant.url}</div></div>
+              <span class="status-badge badge-error">ERROR</span></div>
+              <div class="error-msg">⚠️ ${tenant.error}</div>`;
+        } else {
+          const hosts=tenant.hosts||[];
+          const issues = hosts.filter(h=>h.led!==2 || getDiskAlert(h).alert).length;
+          totalHosts+=hosts.length; totalIssues+=issues; totalServices+=hosts.reduce((s,h)=>s+(h.service_count||0),0);
+          div.classList.add(issues>0?'issues':'ok');
+
+          let hostsHtml='<div class="hosts">';
+          hosts.forEach(host=>{
+            const isDown=host.led!==2;
+            const disk = getDiskAlert(host);
+            const cardSeverityClass = isDown ? 'error' : (disk.alert ? 'warn' : '');
+            const icon=host.led===0?'🔴':(host.led===1?'🟡':'🟢');
+            const text=host.led===0?'Error':(host.led===1?'Warning':'Running');
+            const diskInfo = disk.max>0 ? ` | Disk: ${disk.max.toFixed(1)}%` : '';
+
+            let issuesHtml='';
+            if (host.issues && host.issues.length>0){
+              const errs=host.issues.filter(i=>i.led===0), warns=host.issues.filter(i=>i.led===1);
+              if (errs.length>0) issuesHtml = `<div class="host-issues">⚠️ ${errs.map(i=>i.name).join(', ')}</div>`;
+              else if (warns.length>0) issuesHtml = `<div class="host-issues warning">⚠️ ${warns.map(i=>i.name).join(', ')}</div>`;
+            } else if (disk.alert){
+              const cls = disk.alert==='error' ? '' : ' warning';
+              issuesHtml = `<div class="host-issues${cls}">⚠️ Disk usage ${disk.max.toFixed(1)}%</div>`;
+            }
+
+            const os_name = host.os_name || 'OS N/A';
+            const os_release = host.os_release || '';
+            const hostName = host.hostname || 'Unknown';
+            const serviceText=(host.service_names||[]).join(' ');
+            const searchable = `${hostName} ${os_name} ${os_release} ${serviceText}`.toLowerCase();
+            const hidden = filterText && !searchable.includes(filterText) ? 'hidden' : '';
+
+            hostsHtml += `<div class="host ${cardSeverityClass} ${hidden}"
+                            onclick='showHostDetails(${JSON.stringify(host)}, "${tenant.url}")'>
+                <div class="host-name">${hostName}</div>
+                <div class="host-status ${isDown?'down':''}">
+                  <span>${icon} ${text}</span>
+                  <span class="os-info">${os_name}${os_release?(' '+os_release):''}</span>
+                </div>
+                <div class="host-details">CPU: ${host.cpu}% | Mem: ${host.mem}%${diskInfo}</div>
+                ${issuesHtml}
+              </div>`;
+          });
+          hostsHtml += '</div>';
+
+          div.innerHTML = `<div class="tenant-header">
+              <div>
+                <div class="tenant-name" onclick="window.open('${tenant.url}', '_blank')">${tenant.tenant}</div>
+                <div class="tenant-url">${tenant.url}</div>
+              </div>
+              <span class="status-badge ${issues>0?'badge-warning':'badge-ok'}">${hosts.length} hosts • ${issues} issues</span>
+            </div>${hostsHtml}`;
+        }
+        container.appendChild(div);
+      });
+
+      const issuesCard = document.getElementById('issues-card'); issuesCard.className='stat-card';
+      if (totalIssues>0){
+        const hasError = allHosts.some(h=>{
+          const d=getDiskAlert(h);
+          return (h.issues||[]).some(i=>i.led===0) || d.alert==='error';
+        });
+        issuesCard.classList.add(hasError?'issue-card-error':'issue-card-warn');
+      } else { issuesCard.classList.add('issue-card-ok'); }
+
+      document.getElementById('total-hosts').textContent = totalHosts;
+      document.getElementById('total-services').textContent = totalServices;
+      document.getElementById('issues').textContent = totalIssues;
+    }
+
+    function sortTenants(data, sortBy){
+      const sorted = [...data];
+      switch(sortBy){
+        case 'issues-first':
+          return sorted.sort((a,b)=>{
+            const ai = a.error ? 10000 : (a.hosts||[]).filter(h=>h.led!==2 || getDiskAlert(h).alert).length;
+            const bi = b.error ? 10000 : (b.hosts||[]).filter(h=>h.led!==2 || getDiskAlert(h).alert).length;
+            if (ai!==bi) return bi-ai;
+            const ah=(a.hosts||[]).length, bh=(b.hosts||[]).length; return bh-ah;
+          });
+        case 'name':   return sorted.sort((a,b)=> a.tenant.localeCompare(b.tenant));
+        case 'hosts':  return sorted.sort((a,b)=> (b.hosts||[]).length - (a.hosts||[]).length);
+        case 'cpu':    return sorted.sort((a,b)=>{
+          const av=(a.hosts||[]).reduce((s,h)=>s+(h.cpu||0),0)/((a.hosts||[]).length||1);
+          const bv=(b.hosts||[]).reduce((s,h)=>s+(h.cpu||0),0)/((b.hosts||[]).length||1);
+          return bv-av;
+        });
+        case 'memory': return sorted.sort((a,b)=>{
+          const av=(a.hosts||[]).reduce((s,h)=>s+(h.mem||0),0)/((a.hosts||[]).length||1);
+          const bv=(b.hosts||[]).reduce((s,h)=>s+(h.mem||0),0)/((b.hosts||[]).length||1);
+          return bv-av;
+        });
+        case 'disk':   return sorted.sort((a,b)=>{
+          const avg = (t)=>{
+            const arr=(t.hosts||[]).map(h=>Math.max(...(h.filesystems||[]).map(fs=>fs.usage_percent||0),0));
+            return arr.length? arr.reduce((s,x)=>s+x,0)/arr.length : 0;
+          };
+          return avg(b)-avg(a);
+        });
+        case 'os':
+          return sorted.sort((a,b)=>{
+            const ao=(a.hosts[0]&&a.hosts[0].os_name)||'zzzzzz';
+            const bo=(b.hosts[0]&&b.hosts[0].os_name)||'zzzzzz';
+            return ao.localeCompare(bo);
+          });
+        case 'os-version':
+          return sorted.sort((a,b)=>{
+            const av=(a.hosts||[]).map(h=>h.os_release||'0').sort(compareVersions)[0];
+            const bv=(b.hosts||[]).map(h=>h.os_release||'0').sort(compareVersions)[0];
+            return compareVersions(av,bv);
+          });
+        case 'os-update-needed':
+          return sorted.sort((a,b)=>{
+            const an=(a.hosts||[]).some(h=>!h.os_release);
+            const bn=(b.hosts||[]).some(h=>!h.os_release);
+            if (an && !bn) return -1; if (!an && bn) return 1;
+            const ai=a.error?1000:(a.hosts||[]).filter(h=>h.led!==2).length;
+            const bi=b.error?1000:(b.hosts||[]).filter(h=>h.led!==2).length;
+            return bi-ai;
+          });
+        default: return sorted;
+      }
+    }
+
+    function renderTenants(data){
+      const processedTenants = data.tenants;
+      const container = document.getElementById('tenants'); container.innerHTML='';
+      renderOSStatsAndCards(processedTenants);
+
+      processedTenants.forEach(tenant=>{
+        const div=document.createElement('div'); div.className='tenant';
+        if (tenant.error){
+          div.classList.add('error');
+          div.innerHTML = `<div class="tenant-header">
+              <div><div class="tenant-name">${tenant.tenant}</div><div class="tenant-url">${tenant.url}</div></div>
+              <span class="status-badge badge-error">ERROR</span></div>
+              <div class="error-msg">⚠️ ${tenant.error}</div>`;
+        } else {
+          const hosts = tenant.hosts||[];
+          const issues = hosts.filter(h=>h.led!==2 || getDiskAlert(h).alert).length;
+          div.classList.add(issues>0?'issues':'ok');
+
+          let hostsHtml = '<div class="hosts">';
+          hosts.forEach(host=>{
+            const isDown = host.led!==2;
+            const disk = getDiskAlert(host);
+            const cardSeverityClass = isDown ? 'error' : (disk.alert ? 'warn' : '');
+            const icon = host.led===0?'🔴':(host.led===1?'🟡':'🟢');
+            const text = host.led===0?'Error':(host.led===1?'Warning':'Running');
+            const diskInfo = disk.max>0 ? ` | Disk: ${disk.max.toFixed(1)}%` : '';
+
+            let issuesHtml='';
+            if (host.issues && host.issues.length>0){
+              const errs=host.issues.filter(i=>i.led===0), warns=host.issues.filter(i=>i.led===1);
+              if (errs.length>0) issuesHtml = `<div class="host-issues">⚠️ ${errs.map(i=>i.name).join(', ')}</div>`;
+              else if (warns.length>0) issuesHtml = `<div class="host-issues warning">⚠️ ${warns.map(i=>i.name).join(', ')}</div>`;
+            } else if (disk.alert){
+              const cls = disk.alert==='error' ? '' : ' warning';
+              issuesHtml = `<div class="host-issues${cls}">⚠️ Disk usage ${disk.max.toFixed(1)}%</div>`;
+            }
+
+            const os_name = host.os_name || 'OS N/A';
+            const os_release = host.os_release || '';
+            const hostName = host.hostname || 'Unknown';
+            const serviceText = (host.service_names||[]).join(' ');
+            const filterText = document.getElementById('hostFilter').value.toLowerCase();
+            const searchable = `${hostName} ${os_name} ${os_release} ${serviceText}`.toLowerCase();
+            const hidden = filterText && !searchable.includes(filterText) ? 'hidden' : '';
+
+            hostsHtml += `<div class="host ${cardSeverityClass} ${hidden}" onclick='showHostDetails(${JSON.stringify(host)}, "${tenant.url}")'>
+                <div class="host-name">${hostName}</div>
+                <div class="host-status ${isDown?'down':''}">
+                  <span>${icon} ${text}</span>
+                  <span class="os-info">${os_name}${os_release?(' '+os_release):''}</span>
+                </div>
+                <div class="host-details">CPU: ${host.cpu}% | Mem: ${host.mem}%${diskInfo}</div>
+                ${issuesHtml}
+              </div>`;
+          });
+          hostsHtml+='</div>';
+
+          div.innerHTML = `<div class="tenant-header">
+              <div>
+                <div class="tenant-name" onclick="window.open('${tenant.url}', '_blank')">${tenant.tenant}</div>
+                <div class="tenant-url">${tenant.url}</div>
+              </div>
+              <span class="status-badge ${issues>0?'badge-warning':'badge-ok'}">${hosts.length} hosts • ${issues} issues</span>
+            </div>${hostsHtml}`;
+        }
+        container.appendChild(div);
+      });
+
+      displayTimeInfo(data.last_fetch_time, data.refresh_interval);
+      tenantsData = processedTenants;
+      const currentSort = document.getElementById('sortSelect').value;
+      const sorted = sortTenants(processedTenants, currentSort);
+      renderTenantsOnly(sorted);
+    }
+
+    // ---------------- INIT ----------------
+    document.getElementById('logoutBtn').addEventListener('click', ()=> alert('Demo only – no logout.'));
+    document.getElementById('themeToggle').addEventListener('click', ()=>{
+      const cur = document.documentElement.getAttribute('data-theme');
+      setTheme(cur === 'dark' ? 'light' : 'dark');
+    });
+    document.getElementById('modalClose').addEventListener('click', ()=> document.getElementById('hostModal').classList.remove('show'));
+    document.getElementById('hostModal').addEventListener('click', (e)=>{ if (e.target.id==='hostModal') document.getElementById('hostModal').classList.remove('show'); });
+
+    document.getElementById('sortSelect').addEventListener('change', ()=>{
+      const sorted = sortTenants(tenantsData, document.getElementById('sortSelect').value);
+      renderTenantsOnly(sorted);
+    });
+    document.getElementById('hostFilter').addEventListener('input', ()=>{
+      const sorted = sortTenants(tenantsData, document.getElementById('sortSelect').value);
+      renderTenantsOnly(sorted);
+    });
+
+    initTheme();
+    renderTenants(DEMO_DATA);
+  </script>
 </body>
 </html>
