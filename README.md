@@ -1,6 +1,6 @@
 # M/Monit Hub (Flask Edition)
 
-A lightweight, multi-tenant monitoring dashboard that aggregates multiple [M/Monit](https://mmonit.com/) instances into a single unified interface — now built with **Flask** for improved modularity, extensibility, and authentication.
+A lightweight, multi-tenant monitoring dashboard that aggregates multiple [M/Monit](https://mmonit.com/) instances — and optionally integrates [Healthchecks.io](https://healthchecks.io/) project data — into a single unified interface. Built with **Flask** for modularity, extensibility, and secure authentication.
 
 ---
 
@@ -14,6 +14,7 @@ A lightweight, multi-tenant monitoring dashboard that aggregates multiple [M/Mon
 - Added **browser icon (favicon)** and `manifest.json` for PWA support
 - Extended host detail view with full service list and disk usage alerts
 - ⚡ Auto-refresh updates without page reload
+- **Integrated Healthchecks.io support** — view backup and cron job status alongside hosts
 
 ---
 
@@ -36,6 +37,7 @@ Try the interactive demo with fake data to see how M/Monit Hub works.
 - **Session Authentication** – Secure web login with password hashing (no Basic Auth)
 - **User Isolation** – Configure which **tenants** each dashboard user can access
 - **Multi-Tenant Support** – Aggregate multiple M/Monit instances in one UI
+- **Healthchecks.io Integration** – Display uptime and job monitoring checks per tenant (e.g., backup jobs)
 - ⏱️ **Auto Refresh** – Live updates every N seconds (configurable)
 - **Disk Alerts** – Warnings for high disk usage (default 80% warn / 90% error)
 - ⚠️ **Visual Alerts** – Red/Yellow status cards for quick problem detection
@@ -81,6 +83,7 @@ mmonit-hub/
 - Python 3.8+
 - One or more [M/Monit](https://mmonit.com/) instances with HTTP API enabled
 - Recommended: `gunicorn` for production
+- Optional: one or more [Healthchecks.io](https://healthchecks.io/) projects with API keys
 
 ---
 
@@ -185,6 +188,7 @@ gunicorn -w 2 -b 0.0.0.0:8082 app:app
   - 🟡 **Warning** – partial issues or high disk usage
   - 🔴 **Error** – service down or unreachable
 - **Host modal**: Full detail view with services, disks, and a link to M/Monit
+- **Healthchecks cards** – Represent backup and cron jobs from Healthchecks.io (no CPU/Mem data, distinct dashed borders)
 
 ---
 
@@ -193,6 +197,22 @@ gunicorn -w 2 -b 0.0.0.0:8082 app:app
 - `auto_refresh_seconds`: How often data refreshes automatically (0 = disable)
 - Disk usage alert thresholds default to 80% (warning) and 90% (error)
 - `verify_ssl` can be disabled for self-signed M/Monit certs
+
+Healthchecks.io projects can be added per-tenant by including a `"healthchecks"` block in the config (see example below). Each project accepts an API key, optional tag filters, and SSL verification settings.
+
+```json
+"healthchecks": {
+  "enabled": true,
+  "projects": [
+    {
+      "name": "dcx",
+      "api_key": "YOUR_API_KEY",
+      "tags": ["backup", "db"],
+      "include_paused": false
+    }
+  ]
+}
+```
 
 ---
 

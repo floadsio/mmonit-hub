@@ -83,6 +83,22 @@ function getDiskAlert(host) {
   return { alert: null, max };
 }
 
+// Prefer Healthchecks (or backend-provided) deep-link when available
+function getHostExternalLink(host, tenantUrl) {
+  if (host.view_url) return host.view_url; // Healthchecks or explicit link from backend
+  if (tenantUrl && host.id != null) return `${tenantUrl}/admin/hosts/get?id=${host.id}`; // M/Monit fallback
+  return '#';
+}
+
+// Extra CSS class for host cards (e.g., Healthchecks)
+function hostExtraClass(host) {
+  if (host && typeof host.css_class === 'string' && host.css_class.trim() !== '') {
+    return host.css_class.trim();
+  }
+  if (host && host.source === 'healthchecks') return 'healthchecks';
+  return '';
+}
+
 // Version comparison helper
 function compareVersions(v1, v2) {
   v1 = v1 || '0'; v2 = v2 || '0';
@@ -182,6 +198,9 @@ function showHostDetails(host, tenantUrl) {
     servicesDetailsHtml += '</div></div>';
   }
 
+  const externalHref = getHostExternalLink(host, tenantUrl);
+  const externalLabel = host.source === 'healthchecks' ? 'Healthchecks' : 'M/Monit';
+
   modalTitle.textContent = host.hostname;
   modalBody.innerHTML =
     '<div class="detail-row">' +
@@ -199,7 +218,7 @@ function showHostDetails(host, tenantUrl) {
     '<div class="detail-row"><div class="detail-label">Host ID</div><div class="detail-value">' + host.id + '</div></div>' +
     filesystemsHtml +
     '<div style="margin-top:20px; text-align:center;">' +
-      '<a href="' + tenantUrl + '/admin/hosts/get?id=' + host.id + '" target="_blank" class="refresh">View in M/Monit →</a>' +
+      '<a href="' + externalHref + '" target="_blank" class="refresh">View in ' + externalLabel + ' →</a>' +
     '</div>';
 
   modal.classList.add('show');
@@ -330,9 +349,11 @@ function renderTenants(data){
         const isDown = host.led!==2;
         const disk = getDiskAlert(host);
         const cardSeverityClass = isDown ? 'error' : (disk.alert ? 'warn' : '');
+        const extraCls = hostExtraClass(host);
         const icon = host.led===0?'🔴':(host.led===1?'🟡':'🟢');
         const text = host.led===0?'Error':(host.led===1?'Warning':'Running');
         const diskInfo = disk.max>0 ? ' | Disk: ' + disk.max.toFixed(1) + '%' : '';
+        const sourceBadge = host.source === 'healthchecks' ? '<span class="source-badge" title="Healthchecks">HC</span>' : '';
 
         let issuesHtml='';
         if (host.issues && host.issues.length>0){
@@ -352,9 +373,9 @@ function renderTenants(data){
         const searchable = (hostName + ' ' + os_name + ' ' + os_release + ' ' + serviceText).toLowerCase();
         const hidden = filterText && !searchable.includes(filterText) ? 'hidden' : '';
 
-        hostsHtml += '<div class="host ' + cardSeverityClass + ' ' + hidden +
+        hostsHtml += '<div class="host ' + cardSeverityClass + ' ' + extraCls + ' ' + hidden +
           '" onclick=\'showHostDetails(' + JSON.stringify(host) + ', "' + tenant.url + '")\'>' +
-          '<div class="host-name">' + hostName + '</div>' +
+          '<div class="host-name">' + hostName + ' ' + sourceBadge + '</div>' +
           '<div class="host-status ' + (isDown?'down':'') + '"><span>' + icon + ' ' + text + '</span><span class="os-info">' + os_name + (os_release?(' '+os_release):'') + '</span></div>' +
           '<div class="host-details">CPU: ' + host.cpu + '% | Mem: ' + host.mem + '%' + diskInfo + '</div>' +
           issuesHtml +
@@ -406,9 +427,11 @@ function renderTenantsOnly(data){
         const isDown=host.led!==2;
         const disk = getDiskAlert(host);
         const cardSeverityClass = isDown ? 'error' : (disk.alert ? 'warn' : '');
+        const extraCls = hostExtraClass(host);
         const icon=host.led===0?'🔴':(host.led===1?'🟡':'🟢');
         const text=host.led===0?'Error':(host.led===1?'Warning':'Running');
         const diskInfo = disk.max>0 ? ' | Disk: ' + disk.max.toFixed(1) + '%' : '';
+        const sourceBadge = host.source === 'healthchecks' ? '<span class="source-badge" title="Healthchecks">HC</span>' : '';
 
         let issuesHtml='';
         if (host.issues && host.issues.length>0){
@@ -431,9 +454,9 @@ function renderTenantsOnly(data){
           hidden = host.os_release ? 'hidden' : '';
         }
 
-        hostsHtml += '<div class="host ' + cardSeverityClass + ' ' + hidden +
+        hostsHtml += '<div class="host ' + cardSeverityClass + ' ' + extraCls + ' ' + hidden +
           '" onclick=\'showHostDetails(' + JSON.stringify(host) + ', "' + tenant.url + '")\'>' +
-          '<div class="host-name">' + hostName + '</div>' +
+          '<div class="host-name">' + hostName + ' ' + sourceBadge + '</div>' +
           '<div class="host-status ' + (isDown?'down':'') + '"><span>' + icon + ' ' + text + '</span><span class="os-info">' + os_name + (os_release?(' '+os_release):'') + '</span></div>' +
           '<div class="host-details">CPU: ' + host.cpu + '% | Mem: ' + host.mem + '%' + diskInfo + '</div>' +
           issuesHtml +
