@@ -343,6 +343,14 @@
       ]
     };
 
+    // Allow forcing theme via URL param ?theme=dark or ?theme=light
+    const urlParams = new URLSearchParams(window.location.search);
+    const forcedTheme = urlParams.get('theme');
+    if (forcedTheme === 'dark' || forcedTheme === 'light') {
+    setTheme(forcedTheme);
+    localStorage.setItem('theme', forcedTheme); // remember selection
+    }
+
     // ---------------- THEME ----------------
     function setTheme(theme) {
       document.documentElement.setAttribute('data-theme', theme);
