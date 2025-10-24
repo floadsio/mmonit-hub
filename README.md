@@ -41,6 +41,7 @@ Try the interactive demo with fake data to see how M/Monit Hub works.
 - ⏱️ **Auto Refresh** – Live updates every N seconds (configurable)
 - **Disk Alerts** – Warnings for high disk usage (default 80% warn / 90% error)
 - ⚠️ **Visual Alerts** – Red/Yellow status cards for quick problem detection
+- **Quick Filters** – Toggle the Issues stat or OS cards to focus on problem hosts instantly
 - **Detailed Host View** – Click any host to see full service list and filesystem info
 - **Light/Dark Themes** – Automatic or manual theme switching
 - **Responsive Layout** – Works on desktop, tablet, and mobile
@@ -189,6 +190,7 @@ gunicorn -w 2 -b 0.0.0.0:8082 app:app
   - 🔴 **Error** – service down or unreachable
 - **Host modal**: Full detail view with services, disks, and a link to M/Monit
 - **Healthchecks cards** – Represent backup and cron jobs from Healthchecks.io (no CPU/Mem data, distinct dashed borders)
+- **Filtering** – Click **Issues Detected** to toggle problem hosts on/off, and use OS stat cards (Linux, FreeBSD, etc.) to show only that platform until cleared
 
 ---
 

@@ -1,8 +1,15 @@
 # data_fetcher.py
-import requests
+import hashlib
+from threading import RLock
 from typing import Dict, Any, List
 
+import requests
+
 DEFAULT_TIMEOUT = 12  # seconds
+
+# In-memory cache keyed per Healthchecks project so we can prune stale checks.
+_HEALTHCHECK_CACHE: Dict[str, Dict[str, Dict[str, Any]]] = {}
+_HEALTHCHECK_CACHE_LOCK = RLock()
 
 
 def _hc_status_to_led(status: str) -> int:
@@ -15,6 +22,42 @@ def _hc_status_to_led(status: str) -> int:
     if s == "down":
         return 0
     return 1
+
+
+def _project_cache_key(instance: Dict[str, Any], project: Dict[str, Any], api_base: str) -> str:
+    """Generate a stable cache key without exposing sensitive API keys."""
+    tenant_name = (instance.get("name") or "tenant").strip() or "tenant"
+    project_label = (project.get("name") or "").strip() or "project"
+    tags_part = " ".join(sorted(project.get("tags") or []))
+    include_paused = "1" if project.get("include_paused", False) else "0"
+    api_key = project.get("api_key") or ""
+    digest_material = "|".join([api_base, project_label, tags_part, include_paused])
+    digest = hashlib.sha256(f"{api_key}|{digest_material}".encode("utf-8")).hexdigest()[:16]
+    return f"{tenant_name}:{digest}"
+
+
+def _update_healthchecks_cache(cache_key: str, hosts: List[Dict[str, Any]], context: str) -> None:
+    """Record the current set of checks and drop any that disappeared upstream."""
+    host_index: Dict[str, Dict[str, Any]] = {}
+    for host in hosts:
+        host_id = host.get("id")
+        if host_id is None or host_id == "":
+            fallback = (host.get("hostname") or "").strip() or "unnamed"
+            host_id = f"name:{fallback}"
+        else:
+            host_id = str(host_id)
+        host_index[host_id] = host
+
+    with _HEALTHCHECK_CACHE_LOCK:
+        previous = _HEALTHCHECK_CACHE.get(cache_key) or {}
+        removed_ids = set(previous.keys()) - set(host_index.keys())
+        if removed_ids:
+            removed_names = [previous[rid].get("hostname", rid) for rid in removed_ids]
+            preview = ", ".join(removed_names[:3])
+            if len(removed_names) > 3:
+                preview += f", +{len(removed_names) - 3} more"
+            print(f"[HC] pruned {len(removed_ids)} stale check(s) for {context}: {preview}", flush=True)
+        _HEALTHCHECK_CACHE[cache_key] = host_index
 
 
 def fetch_healthchecks_for_tenant(instance: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -55,6 +98,10 @@ def fetch_healthchecks_for_tenant(instance: Dict[str, Any]) -> List[Dict[str, An
 
         url = f"{api_base}/api/v3/checks/"
         params = [("tag", t) for t in tags]  # multiple tag params => AND filter on HC
+        cache_key = _project_cache_key(instance, proj, api_base)
+        tenant_label = instance.get("name") or "tenant"
+        project_label = proj.get("name") or f"Healthchecks @ {api_base}"
+        context_label = f"{tenant_label}/{project_label}"
 
         try:
             r = requests.get(
@@ -85,6 +132,8 @@ def fetch_healthchecks_for_tenant(instance: Dict[str, Any]) -> List[Dict[str, An
             })
             continue
 
+        project_hosts: List[Dict[str, Any]] = []
+
         for c in payload.get("checks", []):
             status = (c.get("status") or "new").lower()
             if status == "paused" and not include_paused:
@@ -98,7 +147,7 @@ def fetch_healthchecks_for_tenant(instance: Dict[str, Any]) -> List[Dict[str, An
             unique_key = c.get("unique_key")
             check_view = f"{api_base}/checks/{unique_key}" if unique_key else api_base
 
-            merged.append({
+            project_hosts.append({
                 "hostname": name,
                 "led": led,
                 "cpu": 0,
@@ -129,6 +178,9 @@ def fetch_healthchecks_for_tenant(instance: Dict[str, Any]) -> List[Dict[str, An
                 "css_class": "healthchecks",
                 "view_url": check_view,
             })
+
+        _update_healthchecks_cache(cache_key, project_hosts, context_label)
+        merged.extend(project_hosts)
 
     return merged
 

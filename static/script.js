@@ -1,6 +1,21 @@
 /* static/script.js — full file with robust auto/light/dark theme mode */
 
 let tenantsData = [];
+let showOnlyIssues = false;
+let activeHostTypeFilter = null;
+
+const SHOW_ONLY_ISSUES_KEY = 'show_only_issues';
+const HOST_TYPE_FILTER_KEY = 'host_type_filter';
+
+try {
+  const storedHostFilter = localStorage.getItem(HOST_TYPE_FILTER_KEY);
+  if (storedHostFilter && storedHostFilter.trim() !== '') {
+    const normalized = storedHostFilter.trim().toLowerCase();
+    activeHostTypeFilter = normalized === 'os n/a' ? null : normalized;
+  }
+} catch (e) {
+  activeHostTypeFilter = null;
+}
 
 /* ----------------------- Config from server / defaults ----------------------- */
 const DISK_WARN = Number(window.DISK_WARN_PCT ?? 80);
@@ -83,6 +98,48 @@ function getDiskAlert(host) {
   return { alert: null, max };
 }
 
+function hostHasIssue(host) {
+  if (!host) return false;
+  if (host.led !== 2) return true;
+  const disk = getDiskAlert(host);
+  return !!disk.alert;
+}
+
+function normalizeHostType(name) {
+  if (!name) return '';
+  const normalized = String(name).trim().toLowerCase();
+  return normalized === 'os n/a' ? '' : normalized;
+}
+
+function persistHostTypeFilter() {
+  try {
+    if (activeHostTypeFilter) {
+      localStorage.setItem(HOST_TYPE_FILTER_KEY, activeHostTypeFilter);
+    } else {
+      localStorage.removeItem(HOST_TYPE_FILTER_KEY);
+    }
+  } catch (e) {
+    // ignore persistence failures (e.g., private browsing)
+  }
+}
+
+function clearHostTypeFilter() {
+  activeHostTypeFilter = null;
+  persistHostTypeFilter();
+}
+
+function toggleHostTypeFilter(norm) {
+  const normalized = normalizeHostType(norm);
+  const nextFilter = normalized && activeHostTypeFilter !== normalized ? normalized : null;
+  activeHostTypeFilter = nextFilter;
+  persistHostTypeFilter();
+
+  const sortEl = document.getElementById('sortSelect');
+  const sortValue = sortEl ? sortEl.value : 'issues-first';
+  const sorted = sortTenants(tenantsData, sortValue);
+  renderTenantsOnly(sorted);
+}
+
 // Prefer Healthchecks (or backend-provided) deep-link when available
 function getHostExternalLink(host, tenantUrl) {
   if (host.view_url) return host.view_url; // Healthchecks or explicit link from backend
@@ -126,25 +183,128 @@ function displayTimeInfo(lastFetchUnix, refreshSeconds) {
     : 'Auto-refresh: Disabled';
 }
 
+function updateIssuesCardState() {
+  const card = document.getElementById('issues-card');
+  if (!card) return;
+  card.classList.toggle('issues-toggle-active', showOnlyIssues);
+  card.setAttribute('aria-pressed', showOnlyIssues ? 'true' : 'false');
+  const title = showOnlyIssues
+    ? 'Showing only hosts with issues. Click to show all hosts.'
+    : 'Click to show only hosts with issues.';
+  card.setAttribute('title', title);
+}
+
+function initIssuesToggle() {
+  const card = document.getElementById('issues-card');
+  if (!card) return;
+
+  try {
+    showOnlyIssues = localStorage.getItem(SHOW_ONLY_ISSUES_KEY) === '1';
+  } catch (e) {
+    showOnlyIssues = false;
+  }
+
+  card.setAttribute('role', 'button');
+  card.setAttribute('tabindex', '0');
+  updateIssuesCardState();
+
+  const triggerRender = () => {
+    const sortValue = (document.getElementById('sortSelect') || { value: 'issues-first' }).value;
+    const sorted = sortTenants(tenantsData, sortValue);
+    renderTenantsOnly(sorted);
+  };
+
+  card.addEventListener('click', () => {
+    showOnlyIssues = !showOnlyIssues;
+    try {
+      localStorage.setItem(SHOW_ONLY_ISSUES_KEY, showOnlyIssues ? '1' : '0');
+    } catch (e) {
+      // ignore persistence errors
+    }
+    updateIssuesCardState();
+    triggerRender();
+  });
+
+  card.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      card.click();
+    }
+  });
+
+  if (showOnlyIssues && tenantsData.length > 0) {
+    triggerRender();
+  }
+}
+
 /* -------------------------------- OS STATS -------------------------------- */
 
 function renderOSStats(allHosts) {
-  const osCounts = allHosts.reduce((acc, h) => {
-    if (h.os_name && h.os_name !== 'OS N/A') acc[h.os_name] = (acc[h.os_name] || 0) + 1;
-    return acc;
-  }, {});
-  const sorted = Object.entries(osCounts).sort(([, A], [, B]) => B - A);
+  const counts = {};
+  const labels = {};
+
+  allHosts.forEach(host => {
+    const rawName = host && host.os_name ? String(host.os_name).trim() : '';
+    if (!rawName || rawName.toUpperCase() === 'OS N/A') return;
+    const norm = normalizeHostType(rawName);
+    if (!norm) return;
+    counts[norm] = (counts[norm] || 0) + 1;
+    if (!labels[norm]) labels[norm] = rawName;
+  });
+
   const container = document.getElementById('os-stats-container');
   container.innerHTML = '';
-  if (sorted.length === 0) {
+
+  const entries = Object.keys(counts).map(norm => ({
+    norm,
+    count: counts[norm],
+    label: labels[norm]
+  })).sort((a, b) => b.count - a.count);
+
+  if (entries.length === 0) {
     container.style.display = 'none';
     return;
   }
+
   container.style.display = 'grid';
-  sorted.slice(0, 4).forEach(([name, count]) => {
+
+  const activeNorm = activeHostTypeFilter;
+  let cards = entries.slice(0, 4);
+  if (activeNorm && counts[activeNorm] && !cards.some(entry => entry.norm === activeNorm)) {
+    const activeEntry = entries.find(entry => entry.norm === activeNorm);
+    if (activeEntry) {
+      if (cards.length >= 4) cards.pop();
+      cards.push(activeEntry);
+    }
+  }
+  cards = cards.sort((a, b) => b.count - a.count);
+
+  cards.forEach(entry => {
     const card = document.createElement('div');
-    card.className = 'stat-card';
-    card.innerHTML = '<div class="stat-value">' + count + '</div><div class="stat-label">' + name.toUpperCase() + ' HOSTS</div>';
+    card.className = 'stat-card os-stat-card';
+    const isActive = entry.norm === activeNorm;
+    if (isActive) card.classList.add('os-card-active');
+    card.setAttribute('role', 'button');
+    card.setAttribute('tabindex', '0');
+    card.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    const displayLabel = entry.label || 'Unknown';
+    const labelText = displayLabel.toUpperCase() + ' HOSTS';
+    card.setAttribute('title', isActive
+      ? 'Showing only ' + displayLabel + ' hosts. Click to show all hosts.'
+      : 'Click to show only ' + displayLabel + ' hosts.');
+    card.innerHTML =
+      '<div class="stat-value">' + entry.count + '</div>' +
+      '<div class="stat-label">' + labelText + '</div>';
+
+    const activate = () => toggleHostTypeFilter(entry.norm);
+    card.addEventListener('click', activate);
+    card.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        activate();
+      }
+    });
+
     container.appendChild(card);
   });
 }
@@ -301,7 +461,7 @@ function renderOSStatsAndCards(processedTenants){
   processedTenants.forEach(t=>{
     const hosts=t.hosts||[];
     totalHosts+=hosts.length;
-    totalIssues+=hosts.filter(h=>h.led!==2 || getDiskAlert(h).alert).length;
+    totalIssues+=hosts.filter(hostHasIssue).length;
     totalServices+=hosts.reduce((s,h)=>s+(h.service_count||0),0);
   });
 
@@ -341,7 +501,7 @@ function renderTenants(data){
           '<div class="error-msg">⚠️ ' + tenant.error + '</div>';
     } else {
       const hosts = tenant.hosts||[];
-      const issues = hosts.filter(h=>h.led!==2 || getDiskAlert(h).alert).length;
+      const issues = hosts.filter(hostHasIssue).length;
       div.classList.add(issues>0?'issues':'ok');
 
       let hostsHtml = '<div class="hosts">';
@@ -403,27 +563,53 @@ function renderTenants(data){
 function renderTenantsOnly(data){
   const container=document.getElementById('tenants'); container.innerHTML='';
   let totalHosts=0,totalIssues=0,totalServices=0;
-  const allHosts = data.flatMap(t=>t.hosts||[]);
-  renderOSStats(allHosts);
+  const allDisplayedHosts = [];
   const filterText = document.getElementById('hostFilter').value.toLowerCase();
   const selectedSort = document.getElementById('sortSelect').value;
+  const allHosts = data.flatMap(t=>t.hosts||[]);
+
+  let effectiveActiveFilter = activeHostTypeFilter;
+  if (effectiveActiveFilter) {
+    const hasMatchingHosts = allHosts.some(host => normalizeHostType(host && host.os_name) === effectiveActiveFilter);
+    if (!hasMatchingHosts) {
+      clearHostTypeFilter();
+      effectiveActiveFilter = null;
+    }
+  }
 
   data.forEach(tenant=>{
-    const div=document.createElement('div'); div.className='tenant';
+    const hosts=tenant.hosts||[];
+    const issues = hosts.filter(hostHasIssue).length;
+    totalHosts+=hosts.length;
+    totalIssues+=issues;
+    totalServices+=hosts.reduce((s,h)=>s+(h.service_count||0),0);
+
     if (tenant.error){
+      const div=document.createElement('div'); div.className='tenant';
       div.classList.add('error');
       div.innerHTML =
         '<div class="tenant-header"><div><div class="tenant-name">' + tenant.tenant + '</div>' +
         '<div class="tenant-url">' + tenant.url + '</div></div><span class="status-badge badge-error">ERROR</span></div>' +
         '<div class="error-msg">⚠️ ' + tenant.error + '</div>';
-    } else {
-      const hosts=tenant.hosts||[];
-      const issues = hosts.filter(h=>h.led!==2 || getDiskAlert(h).alert).length;
-      totalHosts+=hosts.length; totalIssues+=issues; totalServices+=hosts.reduce((s,h)=>s+(h.service_count||0),0);
+      container.appendChild(div);
+      return;
+    }
+
+    let renderedHosts = hosts;
+    if (showOnlyIssues) {
+      renderedHosts = renderedHosts.filter(hostHasIssue);
+    }
+    if (effectiveActiveFilter) {
+      renderedHosts = renderedHosts.filter(host=>normalizeHostType(host && host.os_name) === effectiveActiveFilter);
+    }
+    if (renderedHosts.length === 0) return;
+
+    const div=document.createElement('div'); div.className='tenant';
+    {
       div.classList.add(issues>0?'issues':'ok');
 
       let hostsHtml='<div class="hosts">';
-      hosts.forEach(host=>{
+      renderedHosts.forEach(host=>{
         const isDown=host.led!==2;
         const disk = getDiskAlert(host);
         const cardSeverityClass = isDown ? 'error' : (disk.alert ? 'warn' : '');
@@ -471,12 +657,15 @@ function renderTenantsOnly(data){
         '</div>' + hostsHtml;
     }
     container.appendChild(div);
+    allDisplayedHosts.push(...renderedHosts);
   });
+
+  renderOSStats(allHosts);
 
   const issuesCard = document.getElementById('issues-card');
   issuesCard.className='stat-card';
   if (totalIssues>0){
-    const hasError = allHosts.some(h=>{
+    const hasError = allDisplayedHosts.some(h=>{
       const d=getDiskAlert(h);
       return (h.issues||[]).some(i=>i.led===0) || d.alert==='error';
     });
@@ -484,10 +673,12 @@ function renderTenantsOnly(data){
   } else {
     issuesCard.classList.add('issue-card-ok');
   }
+  updateIssuesCardState();
 
   document.getElementById('total-hosts').textContent    = totalHosts;
   document.getElementById('total-services').textContent = totalServices;
   document.getElementById('issues').textContent         = totalIssues;
+  document.getElementById('total-tenants').textContent  = data.length;
 }
 
 /* --------------------------------- EVENTS --------------------------------- */
@@ -513,6 +704,8 @@ document.addEventListener('DOMContentLoaded', () => {
       renderTenantsOnly(sorted);
     });
   }
+
+  initIssuesToggle();
 });
 
 document.getElementById('modalClose').addEventListener('click', closeModal);

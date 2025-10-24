@@ -201,6 +201,36 @@ body {
 .stat-value{ font-size:32px; font-weight:700; margin-bottom:4px; }
 .stat-label{ color:var(--text-secondary); font-size:12px; text-transform:uppercase; }
 
+#issues-card{
+  cursor:pointer;
+  transition:transform .1s ease, box-shadow .1s ease;
+}
+#issues-card:hover{
+  transform:translateY(-2px);
+}
+#issues-card:focus-visible{
+  outline:3px solid rgba(59,130,246,.65);
+  outline-offset:2px;
+}
+#issues-card.issues-toggle-active{
+  box-shadow:0 0 0 3px rgba(59,130,246,.45);
+}
+
+#os-stats-container .os-stat-card{
+  cursor:pointer;
+  transition:transform .1s ease, box-shadow .1s ease;
+}
+#os-stats-container .os-stat-card:hover{
+  transform:translateY(-2px);
+}
+#os-stats-container .os-stat-card:focus-visible{
+  outline:3px solid rgba(59,130,246,.65);
+  outline-offset:2px;
+}
+#os-stats-container .os-stat-card.os-card-active{
+  box-shadow:0 0 0 3px rgba(59,130,246,.45);
+}
+
 .error-msg{ color:#ef4444; font-size:14px; }
 .refresh-info{
   display:flex;
