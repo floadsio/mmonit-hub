@@ -466,7 +466,7 @@ function renderOSStatsAndCards(processedTenants){
   });
 
   const issuesCard = document.getElementById('issues-card');
-  issuesCard.className='stat-card';
+  issuesCard.classList.remove('issue-card-error', 'issue-card-warn', 'issue-card-ok');
   if (totalIssues>0){
     const hasError = processedTenants.flatMap(t=>t.hosts||[]).some(h=>{
       const d=getDiskAlert(h);
@@ -663,7 +663,7 @@ function renderTenantsOnly(data){
   renderOSStats(allHosts);
 
   const issuesCard = document.getElementById('issues-card');
-  issuesCard.className='stat-card';
+  issuesCard.classList.remove('issue-card-error', 'issue-card-warn', 'issue-card-ok');
   if (totalIssues>0){
     const hasError = allDisplayedHosts.some(h=>{
       const d=getDiskAlert(h);
