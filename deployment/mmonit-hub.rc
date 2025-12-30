@@ -17,7 +17,7 @@ daemon_flags="-w 2 -b 0.0.0.0:8082 \
 
 . /etc/rc.d/rc.subr
 
-pexp="/home/syseng/mmonit-hub/.*gunicorn.*app:app"
+pexp="/home/syseng/mmonit-hub/.venv/bin/python.*gunicorn.*app:app.*"
 rc_bg=YES
 rc_reload=NO
 
