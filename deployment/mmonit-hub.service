@@ -1,0 +1,39 @@
+[Unit]
+Description=M/Monit Hub - Multi-tenant monitoring dashboard
+After=network.target
+
+[Service]
+Type=notify
+User=syseng
+Group=syseng
+WorkingDirectory=/home/syseng/mmonit-hub
+
+# Security: Code is read-only, only logs writable
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/syseng/mmonit-hub/logs
+ReadOnlyPaths=/home/syseng/mmonit-hub
+
+# Environment
+Environment="MMONIT_HUB_CONFIG=/home/syseng/.config/mmonit-hub/mmonit-hub.conf"
+
+# Execution
+ExecStart=/home/syseng/mmonit-hub/.venv/bin/gunicorn \
+    --workers 2 \
+    --bind 0.0.0.0:8082 \
+    --access-logfile /home/syseng/mmonit-hub/logs/access.log \
+    --error-logfile /home/syseng/mmonit-hub/logs/error.log \
+    --log-level info \
+    app:app
+
+# Restart policy
+Restart=on-failure
+RestartSec=5s
+
+# Logging
+StandardOutput=append:/home/syseng/mmonit-hub/logs/mmonit-hub.log
+StandardError=append:/home/syseng/mmonit-hub/logs/mmonit-hub.log
+SyslogIdentifier=mmonit-hub
+
+[Install]
+WantedBy=multi-user.target

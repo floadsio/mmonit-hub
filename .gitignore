@@ -16,3 +16,18 @@ __pycache__/
 .DS_Store
 .idea/
 .vscode/
+
+# Configuration files (local deployment-specific)
+mmonit-hub.conf
+*.conf
+!mmonit-hub-example.conf    # Keep the example
+
+# Local overrides and documentation
+AGENTS.local.md
+AGENTS.override.md
+PLAN.md
+*_local.sh
+
+# Test and development
+test-config.json
+demo-config.json

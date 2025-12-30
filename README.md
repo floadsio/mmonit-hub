@@ -175,8 +175,94 @@ gunicorn -w 2 -b 0.0.0.0:8082 app:app
 | `make install` | Install dependencies inside `.venv` |
 | `make run` | Run Flask app (`flask run`) |
 | `make gunicorn` | Run with Gunicorn (production-ready) |
+| `make update` | Update code from git (preserves configs) |
+| `make update-restart` | Update code and restart service |
+| `make update-status` | Show git update status |
 | `make clean` | Remove `.venv`, cache, and temp files |
 | `make reset` | Clean + recreate venv and reinstall |
+
+---
+
+## 🔄 Auto-Update Feature
+
+M/Monit Hub includes a safe auto-update mechanism that preserves local configuration files.
+
+### Manual Update
+
+```bash
+# Simple update (updates code, preserves configs)
+make update
+
+# Update and restart service
+make update-restart
+
+# Check for available updates
+make update-status
+```
+
+### How It Works
+
+1. **Fetches** latest code from git remote
+2. **Stashes** any local uncommitted changes (with timestamp)
+3. **Pulls** latest code using `git pull --rebase`
+4. **Restores** local changes automatically
+5. **Updates** Python dependencies from requirements.txt
+6. **Preserves** all config files (git-ignored)
+
+### Configuration Files Protection
+
+The following files are automatically excluded from git updates:
+- `mmonit-hub.conf` (your deployment-specific config)
+- `~/.config/mmonit-hub/mmonit-hub.conf` (user config)
+- Any `*.conf` files except `mmonit-hub-example.conf`
+- Test configs, local documentation, etc.
+
+### Environment Variables
+
+Configure update behavior with environment variables:
+
+```bash
+# Use different remote (default: origin)
+MMONIT_HUB_UPDATE_REMOTE=github make update
+
+# Use different branch (default: main)
+MMONIT_HUB_UPDATE_BRANCH=stable make update
+```
+
+### Systemd Service (Production Deployment)
+
+For production deployments, install the systemd service:
+
+```bash
+# Install service (as root)
+sudo deployment/install-service.sh syseng /home/syseng/mmonit-hub
+
+# Manage service
+sudo systemctl start mmonit-hub
+sudo systemctl stop mmonit-hub
+sudo systemctl restart mmonit-hub
+sudo systemctl status mmonit-hub
+
+# View logs
+sudo journalctl -u mmonit-hub -f
+```
+
+The systemd service enforces read-only access to code, ensuring updates are always safe.
+
+### Troubleshooting Updates
+
+If an update fails:
+
+```bash
+# Check what's preventing the update
+make update-status
+
+# View stashed changes
+git stash list
+
+# Manually apply stashed changes
+git stash pop
+```
 
 ---
 
