@@ -51,10 +51,16 @@ update:
 ## Update code and restart the application
 update-restart: update
 	@echo ">>> Restarting application..."
-	@if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet mmonit-hub; then \
+	@if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet mmonit-hub 2>/dev/null; then \
+		echo ">>> Restarting via systemd..."; \
 		sudo systemctl restart mmonit-hub; \
+	elif command -v rcctl >/dev/null 2>&1 && rcctl check mmonit_hub 2>/dev/null; then \
+		echo ">>> Restarting via rc.d (OpenBSD)..."; \
+		doas rcctl restart mmonit_hub; \
 	else \
-		echo ">>> No systemd service found. Manual restart required."; \
+		echo ">>> No service manager found. Manual restart required."; \
+		echo ">>> Linux: sudo systemctl restart mmonit-hub"; \
+		echo ">>> OpenBSD: doas rcctl restart mmonit_hub"; \
 	fi
 
 ## Check update status (show git status and pending changes)

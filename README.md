@@ -88,6 +88,19 @@ mmonit-hub/
 
 ---
 
+## 🐡 Platform Support
+
+M/Monit Hub is designed to work on multiple Unix-like platforms:
+
+- **Linux** (systemd-based distributions)
+- **OpenBSD** (rc.d init system)
+- **FreeBSD** (rc.d init system, similar to OpenBSD)
+- **macOS** (launchd - manual deployment)
+
+The auto-update feature (`make update`) works on all platforms. Service management adapts to your platform's init system.
+
+---
+
 ## 🧰 Installation & Setup
 
 ### 1️⃣ Clone the repository
@@ -248,6 +261,37 @@ sudo journalctl -u mmonit-hub -f
 ```
 
 The systemd service enforces read-only access to code, ensuring updates are always safe.
+
+### OpenBSD rc.d Service (Alternative to systemd)
+
+For OpenBSD deployments, use the rc.d init system:
+
+```bash
+# Install rc.d script (as root with doas)
+doas deployment/install-rc.sh syseng /home/syseng/mmonit-hub
+
+# Enable and start service
+doas rcctl enable mmonit_hub
+doas rcctl start mmonit_hub
+
+# Manage service
+doas rcctl stop mmonit_hub
+doas rcctl restart mmonit_hub
+doas rcctl check mmonit_hub
+
+# View logs
+tail -f /home/syseng/mmonit-hub/logs/error.log
+tail -f /home/syseng/mmonit-hub/logs/access.log
+```
+
+**Note:** OpenBSD rc.d requires underscores in service names, so the service is called `mmonit_hub` (not `mmonit-hub`).
+
+**Platform Detection:**
+
+The `make update-restart` target automatically detects your platform:
+- **Linux:** Uses `sudo systemctl restart mmonit-hub`
+- **OpenBSD:** Uses `doas rcctl restart mmonit_hub`
+- **Other:** Provides manual restart instructions
 
 ### Troubleshooting Updates
 
