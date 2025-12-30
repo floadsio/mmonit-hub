@@ -3,8 +3,8 @@
 # $OpenBSD$
 # rc.d(8) script for M/Monit Hub
 #
-# Gunicorn handles daemonization itself via --daemon flag
-# We use the PID file it creates for process management
+# Uses rc_bg for backgrounding (standard OpenBSD approach)
+# pexp pattern matches the gunicorn master process
 
 daemon="/home/syseng/mmonit-hub/.venv/bin/gunicorn"
 daemon_user="syseng"
@@ -12,14 +12,13 @@ daemon_flags="-w 2 -b 0.0.0.0:8082 \
     --access-logfile /home/syseng/mmonit-hub/logs/access.log \
     --error-logfile /home/syseng/mmonit-hub/logs/error.log \
     --log-level info \
-    --daemon \
-    --pid /var/run/mmonit_hub.pid \
     --chdir /home/syseng/mmonit-hub \
     app:app"
 
 . /etc/rc.d/rc.subr
 
-# Use PID file for process checking (gunicorn creates this with --pid)
+pexp="gunicorn.*0.0.0.0:8082"
+rc_bg=YES
 rc_reload=NO
 
 rc_cmd $1
