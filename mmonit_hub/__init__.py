@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
-from flask import Flask, jsonify, redirect, render_template, request, url_for
+from flask import Flask, jsonify, redirect, render_template, request, url_for, session
 from flask_login import (
     LoginManager,
     UserMixin,
@@ -15,10 +15,20 @@ from flask_login import (
     login_required,
     current_user,
 )
+from flask_wtf.csrf import CSRFProtect
 
 from config_loader import load_config
-from auth_utils import verify_password
+from auth_utils import (
+    verify_password,
+    verify_api_token,
+    generate_passkey_registration_options,
+    verify_passkey_registration,
+    generate_passkey_authentication_options,
+    verify_passkey_authentication,
+    find_user_by_passkey,
+)
 from data_fetcher import query_mmonit_data
+from webauthn.helpers import bytes_to_base64url, base64url_to_bytes
 
 LAST_FETCH_TIME = None  # populated on /api/data
 
@@ -95,6 +105,26 @@ def create_app(config_path: Optional[str] = None) -> Flask:
     login_manager.login_view = "login"
     login_manager.init_app(app)
 
+    # CSRF Protection
+    csrf = CSRFProtect()
+    csrf.init_app(app)
+
+    # Exempt API routes from CSRF (will use Bearer token auth)
+    csrf.exempt("api_data")
+
+    @app.before_request
+    def check_api_token_auth():
+        """Check for Bearer token on API routes if not already authenticated"""
+        if request.path.startswith("/api/") and not current_user.is_authenticated:
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                token = auth_header[7:]
+                username, user_cfg = verify_api_token(token, cfg)
+                if username and user_cfg:
+                    user = users_map.get(username)
+                    if user:
+                        login_user(user, remember=False)
+
     @login_manager.user_loader
     def load_user(user_id: str) -> Optional[ConfigUser]:
         return users_map.get(user_id)
@@ -121,6 +151,146 @@ def create_app(config_path: Optional[str] = None) -> Flask:
     def logout():
         logout_user()
         return redirect(url_for("login"))
+
+    # --- WebAuthn/Passkey routes ---
+
+    # Get user's passkeys from config
+    def get_user_passkeys(username: str) -> list:
+        for u in cfg.get("users", []):
+            if u["username"] == username:
+                return u.get("passkeys", [])
+        return []
+
+    # Get user_id bytes (deterministic based on username)
+    def get_user_id(username: str) -> bytes:
+        import hashlib
+        return hashlib.sha256(username.encode()).digest()[:16]
+
+    @app.post("/auth/passkey/login/begin")
+    def passkey_login_begin():
+        """Begin passkey authentication - returns challenge"""
+        data = request.get_json() or {}
+        username = data.get("username", "").strip()
+
+        if not username:
+            return jsonify({"error": "Username required"}), 400
+
+        user_passkeys = get_user_passkeys(username)
+        if not user_passkeys:
+            return jsonify({"error": "No passkeys registered"}), 400
+
+        options_json, challenge = generate_passkey_authentication_options(
+            username, cfg, user_passkeys
+        )
+        session["webauthn_challenge"] = bytes_to_base64url(challenge)
+        session["webauthn_username"] = username
+
+        return options_json, 200, {"Content-Type": "application/json"}
+
+    @app.post("/auth/passkey/login/complete")
+    def passkey_login_complete():
+        """Complete passkey authentication - verify response"""
+        challenge_b64 = session.pop("webauthn_challenge", None)
+        username = session.pop("webauthn_username", None)
+
+        if not challenge_b64 or not username:
+            return jsonify({"error": "No pending authentication"}), 400
+
+        credential = request.get_json()
+        if not credential:
+            return jsonify({"error": "Missing credential"}), 400
+
+        challenge = base64url_to_bytes(challenge_b64)
+        credential_id = credential.get("id", "")
+
+        # Find the stored credential
+        stored_cred = None
+        for cred in get_user_passkeys(username):
+            if cred["id"] == credential_id:
+                stored_cred = cred
+                break
+
+        if not stored_cred:
+            return jsonify({"error": "Unknown credential"}), 400
+
+        new_sign_count = verify_passkey_authentication(
+            credential, challenge, stored_cred, cfg
+        )
+
+        if new_sign_count is None:
+            return jsonify({"error": "Authentication failed"}), 401
+
+        # Login the user
+        user = users_map.get(username)
+        if not user:
+            return jsonify({"error": "User not found"}), 400
+
+        login_user(user, remember=True)
+        return jsonify({"success": True, "redirect": url_for("index")})
+
+    @app.post("/auth/passkey/register/begin")
+    @login_required
+    def passkey_register_begin():
+        """Begin passkey registration - returns challenge"""
+        username = current_user.id
+        user_id = get_user_id(username)
+        existing = get_user_passkeys(username)
+
+        options_json, challenge = generate_passkey_registration_options(
+            username, user_id, cfg, existing
+        )
+        session["webauthn_reg_challenge"] = bytes_to_base64url(challenge)
+
+        return options_json, 200, {"Content-Type": "application/json"}
+
+    @app.post("/auth/passkey/register/complete")
+    @login_required
+    def passkey_register_complete():
+        """Complete passkey registration - verify and store credential"""
+        challenge_b64 = session.pop("webauthn_reg_challenge", None)
+
+        if not challenge_b64:
+            return jsonify({"error": "No pending registration"}), 400
+
+        credential = request.get_json()
+        if not credential:
+            return jsonify({"error": "Missing credential"}), 400
+
+        challenge = base64url_to_bytes(challenge_b64)
+        cred_data = verify_passkey_registration(credential, challenge, cfg)
+
+        if not cred_data:
+            return jsonify({"error": "Registration failed"}), 400
+
+        # Note: In production, you would save this to the config file
+        # For now, return the credential data for manual addition
+        cred_data["name"] = credential.get("name", "Passkey")
+        cred_data["created"] = datetime.now(timezone.utc).isoformat()
+
+        return jsonify({
+            "success": True,
+            "credential": cred_data,
+            "message": "Add this to your config file under user's passkeys array"
+        })
+
+    @app.get("/settings")
+    @login_required
+    def settings():
+        """User settings page for passkey management"""
+        passkeys = get_user_passkeys(current_user.id)
+        webauthn_enabled = "webauthn" in cfg
+        return render_template(
+            "settings.html",
+            username=current_user.id,
+            passkeys=passkeys,
+            webauthn_enabled=webauthn_enabled,
+        )
+
+    # Exempt WebAuthn routes from CSRF (they use their own challenge mechanism)
+    csrf.exempt("passkey_login_begin")
+    csrf.exempt("passkey_login_complete")
+    csrf.exempt("passkey_register_begin")
+    csrf.exempt("passkey_register_complete")
 
     # --- App routes ---
     @app.get("/")

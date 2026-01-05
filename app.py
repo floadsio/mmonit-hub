@@ -7,7 +7,7 @@ from typing import Optional
 
 from mmonit_hub import create_app          # expects a path string
 from config_loader import load_config
-from auth_utils import hash_password
+from auth_utils import hash_password, generate_api_token
 
 
 def _resolve_config_path(cli_override: Optional[str] = None) -> Optional[str]:
@@ -52,7 +52,22 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="M/Monit Hub (Flask) Launcher")
     parser.add_argument("--config", help="Path to configuration file (overrides env/home/repo)")
     parser.add_argument("--hash-password", action="store_true", help="Generate password hash and exit")
+    parser.add_argument("--generate-token", action="store_true", help="Generate API token and exit")
     args = parser.parse_args()
+
+    if args.generate_token:
+        token = generate_api_token()
+        print("\nGenerated API token:")
+        print(token)
+        print("\nAdd this to your config file under user's api_tokens:")
+        print('  "api_tokens": [')
+        print('    {')
+        print(f'      "name": "my-token",')
+        print(f'      "token": "{token}",')
+        print(f'      "created": "{__import__("datetime").datetime.now().isoformat()}"')
+        print('    }')
+        print('  ]')
+        sys.exit(0)
 
     if args.hash_password:
         pw1 = getpass.getpass("Enter password to hash: ")

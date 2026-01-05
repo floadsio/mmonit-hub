@@ -19,21 +19,74 @@
       font-weight:600;cursor:pointer
     }
     .login-btn:hover{background:#1e3a8a}
+    .login-btn:disabled{opacity:0.5;cursor:not-allowed}
     .login-err{color:#ef4444;margin-bottom:12px}
     .remember{display:flex;align-items:center;gap:8px;color:var(--text-secondary);margin-bottom:12px}
+    .divider{display:flex;align-items:center;margin:16px 0;color:var(--text-secondary)}
+    .divider::before,.divider::after{content:'';flex:1;border-bottom:1px solid var(--border-color)}
+    .divider::before{margin-right:12px}
+    .divider::after{margin-left:12px}
+    .passkey-btn{
+      width:100%;padding:10px 14px;border-radius:8px;border:1px solid var(--border-color);
+      background:var(--bg-tertiary);color:var(--text-primary);font-weight:600;cursor:pointer;
+      display:flex;align-items:center;justify-content:center;gap:8px
+    }
+    .passkey-btn:hover{background:var(--bg-primary)}
+    .passkey-btn:disabled{opacity:0.5;cursor:not-allowed}
+    .hidden{display:none}
   </style>
 </head>
 <body>
   <div class="login-card">
-    <div class="login-title">🖥️ M/Monit Hub</div>
+    <div class="login-title">M/Monit Hub</div>
     <div class="login-sub">Please sign in</div>
-    {% if err %}<div class="login-err">⚠️ {{ err }}</div>{% endif %}
+    {% if err %}<div class="login-err">{{ err }}</div>{% endif %}
+    <div id="passkey-error" class="login-err hidden"></div>
     <form method="post" action="{{ url_for('login') }}">
-      <input class="login-input" type="text" name="username" placeholder="Username" autofocus required>
-      <input class="login-input" type="password" name="password" placeholder="Password" required>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input class="login-input" type="text" name="username" id="username" placeholder="Username" autofocus required>
+      <input class="login-input" type="password" name="password" id="password" placeholder="Password" required>
       <label class="remember"><input type="checkbox" name="remember"> Remember me</label>
       <button class="login-btn" type="submit">Sign in</button>
     </form>
+    <div class="divider">or</div>
+    <button id="passkey-btn" class="passkey-btn" type="button">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/>
+      </svg>
+      Sign in with Passkey
+    </button>
   </div>
+  <script src="{{ url_for('static', filename='webauthn.js') }}"></script>
+  <script>
+    document.getElementById('passkey-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('passkey-btn');
+      const errDiv = document.getElementById('passkey-error');
+      const username = document.getElementById('username').value.trim();
+
+      if (!username) {
+        errDiv.textContent = 'Enter username first';
+        errDiv.classList.remove('hidden');
+        document.getElementById('username').focus();
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Authenticating...';
+      errDiv.classList.add('hidden');
+
+      try {
+        const result = await passkeyLogin(username);
+        if (result.redirect) {
+          window.location.href = result.redirect;
+        }
+      } catch (e) {
+        errDiv.textContent = e.message || 'Passkey authentication failed';
+        errDiv.classList.remove('hidden');
+        btn.disabled = false;
+        btn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg> Sign in with Passkey';
+      }
+    });
+  </script>
 </body>
 </html>
