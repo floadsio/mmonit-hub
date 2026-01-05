@@ -47,7 +47,8 @@
     <div class="controls">
       <div class="user-logout-group">
         <span class="user-info">👤 {{ username }}</span>
-        <button class="logout-btn" id="logoutBtn">Logout / Change User</button>
+        <a href="{{ url_for('settings') }}" class="settings-btn" title="Settings">⚙️</a>
+        <button class="logout-btn" id="logoutBtn">Logout</button>
       </div>
       <input type="text" id="hostFilter" placeholder="Filter hosts, OS, versions, services…" class="filter-input">
       <select class="sort-dropdown" id="sortSelect">
